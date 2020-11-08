@@ -78,5 +78,5 @@ pub fn csc(input:Decimal) -> Decimal{
 }
 
 pub fn cot(input:Decimal) -> Decimal{
-    Decimal::from_f64(input.to_f64().unwrap().cos()/&input.to_f64().unwrap().sin()).unwrap()
+    Decimal::from_f64(input.to_f64().unwrap().cos()/input.to_f64().unwrap().sin()).unwrap()
 }

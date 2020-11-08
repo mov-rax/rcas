@@ -73,43 +73,6 @@ impl error::Error for FormattingError{}
 impl error::Error for GenericError{}
 impl error::Error for UnknownIdentifierError{}
 
-///A vector implementation of a binary tree.
-pub struct BinaryTreeSolver {
-    data:Vec<Decimal>
-}
-// 5 + 4 - 2 * 6
-impl BinaryTreeSolver {
-    pub fn new() -> Self{
-        Self {data:Vec::new()}
-    }
-
-    pub fn insert(number:Decimal){
-        let mut index:usize = 0;
-
-    }
-
-    pub fn child_left(&self, index:usize) -> Option<usize>{
-        if index * 2 < &self.data.len()-1{
-            return Some(index*2)
-        }
-        None
-    }
-
-    pub fn child_right(&self, index:usize) -> Option<usize>{
-        if index * 2 + 1 < &self.data.len()-1{
-            return Some(index*2+1)
-        }
-        None
-    }
-
-    pub fn parent(&self, index:usize) -> Option<usize>{
-        if index == 0{
-            return None
-        }
-        return Some(index/2)
-    }
-}
-///Gets an input, creates magical output.
 pub struct RCas;
 
 impl RCas{
@@ -182,10 +145,120 @@ impl Wrapper{
     }
 
 }
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum SmartValue{
+    Operator(char),
+    Function(String), //holds the user-defined function identifier
+    DedicatedFunction(String), //holds the function identifier
+    TestDedicatedFunction(String, Vec<Vec<SmartValue>>), // Has identifier of function as well as parameters in a 2D Vector. Each parameter in a function can hold an expression to calculate.
+    Parameters(SmartParameter), //holds parameters of functions
+    Number(Decimal),
+    LParen,
+    RParen,
+    LFuncBound, //separate types of parentheses are used to identify parentheses that contain expressions and those that do not.
+    RFuncBound,
+    Variable(String), //variable does not require ( ), therefore there exists Function and Variable
+    Placeholder(Vec<SmartValue>),
+    Range(Decimal,Decimal,Decimal), // Lower, Step, Upper
+    Label(String,Vec<SmartValue>), // A label can contains an identifier and a possible expression.
+    Comma
+}
+
+impl SmartValue{
+    pub fn get_value(&self) -> String{
+        let mut buf = String::new();
+        match self{
+            SmartValue::Operator(x) => buf.push(*x),
+            SmartValue::Function(_) => buf.push(FNC),
+            SmartValue::DedicatedFunction(x) => buf.push(FNC),
+            SmartValue::Number(x) => {
+                let num = format!("{}", x);
+                for sus in num.chars(){
+                    buf.push(sus)
+                }
+
+            },
+            SmartValue::LParen => buf.push('('),
+            SmartValue::RParen => buf.push(')'),
+            SmartValue::Placeholder(_) => buf.push(PHD),
+            SmartValue::Variable(_) => buf.push(VAR),
+            SmartValue::Parameters(_) => buf.push(PAR),
+            SmartValue::LFuncBound => buf.push('|'),
+            SmartValue::RFuncBound => buf.push('|'),
+            _ => buf.push('?')
+        }
+        buf
+    }
+}
+
+/// Contains data of all passed-through parameters.
+/// Each parameter is stored as a Wrapper.
+#[derive(Debug, PartialEq, Clone)]
+pub struct SmartParameter{
+    params:Vec<Decimal>
+}
+
+impl SmartParameter{
+    /// Takes in param1, param2, param2, ... , and converts it into
+    /// a specialized datatype that can easily transverse parameters
+    pub fn from_str(input:&str) -> Self{
+        let magic:Vec<&str> = input.split(',').collect();
+        let mut values:Vec<Decimal> = Vec::new();
+        for x in magic{
+            // this does a LOT of stuff. It parses and solves each entry.
+            if let Ok(value) = parser(x){
+                if let SmartValue::Number(num) = recurse_solve(value.clone())[0].clone(){
+                    values.push(num);
+                }
+            }
+        }
+        Self {params: values}
+    }
+
+    pub fn new() -> Self{
+        Self{params:Vec::new()}
+    }
+    ///Will try to solve and insert the result as a parameter
+    pub fn push(&mut self, input:Vec<SmartValue>){
+        if let SmartValue::Number(number) = recurse_solve(input)[0].clone(){
+            self.params.push(number);
+        }
+    }
+    /// Returns true if the number of parameters given conforms with the type of function
+    /// associated with the given identifier.
+    pub fn test_params_conformance(&self, identifier:&str) -> bool{
+        let func = rcas_functions::SmartFunction::get(identifier);
+        println!("{}", self.params.len());
+        match func{
+            SmartFunction::Mono(_) => { self.params.len() == 1},
+            SmartFunction::Binary(_) => {self.params.len() == 2},
+            SmartFunction::Poly(_) => {self.params.len() >= 1},
+            SmartFunction::PolyPoly(_) => {self.params.len() >= 1},
+            SmartFunction::MonoOpt(_) => {self.params.len() == 1},
+            SmartFunction::BinaryOpt(_) => {self.params.len() == 2},
+            SmartFunction::PolyOpt(_) => {self.params.len() >= 1},
+            SmartFunction::PolyPolyOpt(_) => {self.params.len() >= 1},
+            _ => {false}
+        }
+    }
+}
+
+
+pub struct Params{
+    params:Vec<Vec<SmartValue>>
+}
 ///User-defined variable and function stack
 pub struct SmartStack{
 
 }
+
+fn expression_clone(input:&Vec<SmartValue>, lower:usize, upper:usize) -> Vec<SmartValue>{
+    let mut clone = Vec::new();
+    clone.clone_from_slice(&input[lower..upper]);
+    clone
+}
+
 fn recurse_solve(mut input:Vec<SmartValue>) -> Vec<SmartValue>{
     //print_sv_vec(&input);
     return if has_placeholder(&input) {
@@ -448,10 +521,6 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
         let nth:char = input.chars().nth(i).ok_or(GenericError)?;
         let next_nth:Option<char> = input.chars().nth(i + 1);
 
-        // if nth == ' '{ // we don't want to parse spaces.
-        //     position += 1;
-        //     continue
-        // }
 
         //function parsing is special :)
         if function{
@@ -510,7 +579,6 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
 
 
         }
-
 
         //check parentheses
         if nth == '('{
@@ -660,104 +728,6 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
     Ok(temp) //sends back the parsed information.
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum SmartValue{
-    Operator(char),
-    Function(String), //holds the user-defined function identifier
-    DedicatedFunction(String), //holds the function identifer
-    Parameters(SmartParameter), //holds parameters of functions
-    Number(Decimal),
-    LParen,
-    RParen,
-    LFuncBound, //separate types of parentheses are used to identify parentheses that contain expressions and those that do not.
-    RFuncBound,
-    Variable(String), //variable does not require ( ), therefore there exists Function and Variable
-    Placeholder(Vec<SmartValue>),
-}
 
-impl SmartValue{
-    pub fn get_value(&self) -> String{
-        let mut buf = String::new();
-        match self{
-            SmartValue::Operator(x) => buf.push(*x),
-            SmartValue::Function(_) => buf.push(FNC),
-            SmartValue::DedicatedFunction(x) => buf.push(FNC),
-            SmartValue::Number(x) => {
-                let num = format!("{}", x);
-                for sus in num.chars(){
-                    buf.push(sus)
-                }
-
-            },
-            SmartValue::LParen => buf.push('('),
-            SmartValue::RParen => buf.push(')'),
-            SmartValue::Placeholder(_) => buf.push(PHD),
-            SmartValue::Variable(_) => buf.push(VAR),
-            SmartValue::Parameters(_) => buf.push(PAR),
-            SmartValue::LFuncBound => buf.push('|'),
-            SmartValue::RFuncBound => buf.push('|')
-        }
-        buf
-    }
-}
-
-/// Contains data of all passed-through parameters.
-/// Each parameter is stored as a Wrapper.
-#[derive(Debug, PartialEq, Clone)]
-pub struct SmartParameter{
-    params:Vec<Decimal>
-}
-
-impl SmartParameter{
-    /// Takes in param1, param2, param2, ... , and converts it into
-    /// a specialized datatype that can easily transverse parameters
-    pub fn from_str(input:&str) -> Self{
-        let magic:Vec<&str> = input.split(',').collect();
-        let mut values:Vec<Decimal> = Vec::new();
-        for x in magic{
-            // this does a LOT of stuff. It parses and solves each entry.
-            if let Ok(value) = parser(x){
-               if let SmartValue::Number(num) = recurse_solve(value.clone())[0].clone(){
-                   values.push(num);
-               }
-            }
-        }
-        Self {params: values}
-    }
-
-    pub fn new() -> Self{
-        Self{params:Vec::new()}
-    }
-    ///Will try to solve and insert the result as a parameter
-    pub fn push(&mut self, input:Vec<SmartValue>){
-        if let SmartValue::Number(number) = recurse_solve(input)[0].clone(){
-            self.params.push(number);
-        }
-    }
-    /// Returns true if the number of parameters given conforms with the type of function
-    /// associated with the given identifier.
-    pub fn test_params_conformance(&self, identifier:&str) -> bool{
-        let func = rcas_functions::SmartFunction::get(identifier);
-        println!("{}", self.params.len());
-        match func{
-            rcas_functions::SmartFunction::Mono(_) => { self.params.len() == 1},
-            rcas_functions::SmartFunction::Binary(_) => {self.params.len() == 2},
-            rcas_functions::SmartFunction::Poly(_) => {self.params.len() >= 1},
-            rcas_functions::SmartFunction::PolyPoly(_) => {self.params.len() >= 1},
-            rcas_functions::SmartFunction::MonoOpt(_) => {self.params.len() == 1},
-            rcas_functions::SmartFunction::BinaryOpt(_) => {self.params.len() == 2},
-            rcas_functions::SmartFunction::PolyOpt(_) => {self.params.len() >= 1},
-            rcas_functions::SmartFunction::PolyPolyOpt(_) => {self.params.len() >= 1},
-            _ => {false}
-        }
-    }
-
-
-}
-
-
-pub struct Params{
-    params:Vec<Vec<SmartValue>>
-}
 
 
