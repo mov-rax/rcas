@@ -1,5 +1,4 @@
 use rust_decimal::*;
-use rust_decimal_macros::*;
 use std::io::ErrorKind;
 use std::fmt;
 use crate::rcas_lib::SmartValue::Operator;
@@ -10,7 +9,6 @@ use std::ptr::replace;
 use std::ops::Deref;
 use crate::rcas_functions;
 use crate::rcas_functions::SmartFunction;
-use nom::Compare;
 
 //constants
 const ADD:char = '+'; //addition
@@ -76,14 +74,13 @@ impl error::Error for UnknownIdentifierError{}
 pub struct RCas;
 
 impl RCas{
-    pub fn query(input:&str){
+    pub fn query(input:&str) -> String{
         match parser(input){
             Ok(parsed) => {
                 let mut wrapper = Wrapper::compose(parsed);
                 //print_sv_vec(&wrapper.values);
                 wrapper.solve();
-                println!("answer:");
-                wrapper.print_raw();
+                wrapper.to_string()
             },
             Err(error) => {
                 println!("Parsing Error :(");
@@ -113,13 +110,11 @@ impl RCas{
                     info = format!("UNKNOWN IDENTIFIER detected at character {}. {} is NOT A VALID \
                     variable or function name.", &error.position, &error.identifier);
                 }
-
-                println!("{}", info);
+                info
             }
         }
-
-
     }
+
 }
 
 #[derive(PartialEq, Clone)]
@@ -143,6 +138,8 @@ impl Wrapper{
     pub fn print_raw(&self){
         print_sv_vec(&self.values);
     }
+
+    pub fn to_string(&self) -> String{ sv_vec_string(&self.values) }
 
 }
 
@@ -244,13 +241,14 @@ impl SmartParameter{
     }
 }
 
-
 pub struct Params{
     params:Vec<Vec<SmartValue>>
 }
-///User-defined variable and function stack
-pub struct SmartStack{
 
+#[derive(Debug,Clone)]
+pub enum CalculationMode{
+    Radian,
+    Degree
 }
 
 fn expression_clone(input:&Vec<SmartValue>, lower:usize, upper:usize) -> Vec<SmartValue>{
@@ -377,6 +375,15 @@ pub fn print_sv_vec(sv:&Vec<SmartValue>){
         //buf.push('|');
     }
     println!("{}", buf)
+}
+
+/// Converts a &Vec<SmartValue> to a String
+pub fn sv_vec_string(sv:&Vec<SmartValue>) -> String {
+    let mut buf = String::new();
+    for value in sv{
+        buf.push_str(value.get_value().as_str());
+    }
+    buf
 }
 
 ///Takes a Vec<SmartValue> and composes it such that no LParen or RParen
@@ -727,7 +734,3 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
 
     Ok(temp) //sends back the parsed information.
 }
-
-
-
-

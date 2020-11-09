@@ -5,10 +5,12 @@ use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
 
 mod rcas_lib;
 mod rcas_functions;
+mod rcas_gui;
 
 fn main() {
-    let expression = "sin(2)";
-    rcas_lib::RCas::query(expression);
+    let expression = "4(3-1.5*(6+4/10.5)*3)+4";
+    let result = rcas_lib::RCas::query(expression);
+    println!("{}", result);
     // let magic = rcas_lib::parser("4*sin(2)");
     // if let Ok(magic) = magic{
     //     rcas_lib::print_sv_vec(&magic);
