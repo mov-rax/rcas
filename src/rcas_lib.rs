@@ -71,10 +71,18 @@ impl error::Error for FormattingError{}
 impl error::Error for GenericError{}
 impl error::Error for UnknownIdentifierError{}
 
-pub struct RCas;
+pub struct RCas{}
 
 impl RCas{
-    pub fn query(input:&str) -> String{
+
+    pub fn new() -> RCas{
+        RCas {}
+    }
+
+    pub fn query(&self, input:&str) -> String{
+
+        let number = 55;
+
         match parser(input){
             Ok(parsed) => {
                 let mut wrapper = Wrapper::compose(parsed);
@@ -88,11 +96,15 @@ impl RCas{
                 let mut info = String::new();
                 //time to try all types of errors :)
                 if let Some(error) = error.downcast_ref::<ParenthesesError>(){
-                    let add_or_remove = {
+
+                    let add_or_remove = { // returns REMOVING or ADDING depending on whether it is suggested to add or remove a parentheses
                         let mut option = "REMOVING";
                         if error.positive {
                             option = "ADDING";
-                        } option};
+                        }
+                        option
+                    };
+
                     info = format!("PARENTHESES ERROR detected at character {}. Have you tried {} \
                     a parentheses?", &error.position, add_or_remove);
                 }
@@ -142,6 +154,8 @@ impl Wrapper{
     pub fn to_string(&self) -> String{ sv_vec_string(&self.values) }
 
 }
+
+// f(x) = 20x+5
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SmartValue{
@@ -249,6 +263,16 @@ pub struct Params{
 pub enum CalculationMode{
     Radian,
     Degree
+}
+
+impl CalculationMode{
+    pub fn to_string(&self) -> String{
+        match &self{
+            CalculationMode::Radian => format!("RAD -> "),
+            CalculationMode::Degree => format!("DEG -> ")
+        }
+    }
+
 }
 
 fn expression_clone(input:&Vec<SmartValue>, lower:usize, upper:usize) -> Vec<SmartValue>{
