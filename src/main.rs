@@ -12,12 +12,15 @@ mod rcas_functions;
 mod rcas_gui;
 
 
-
 fn main() {
+
     //let expression = "4(3-1.5*(6+4/10.5)*3)+4";
     //let cas = rcas_lib::RCas::new();
     //let result = cas.query(expression);
     //println!("{}", result);
+    //Comment by Mario
+
+    //let name_mario= String::from("Mario Vega");
 
     let app = App::default().with_scheme(app::Scheme::Gtk);
     let mut window:Window = Window::default()
