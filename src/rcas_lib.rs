@@ -529,7 +529,7 @@ pub fn calculate(input: &mut Vec<SmartValue>){
 pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
     //ONE RULE MUST FOLLOWED, WHICH IS THAT EACH NTH IN THE LOOP CAN ONLY SEE
     //THE NTH IN FRONT OF IT. GOING BACK TO CHECK VALUES IS NOT ALLOWED.
-    let input = input.chars().filter(|x| *x != ' ').collect::<String>();
+    let input = input.chars().filter(|x| *x != ' ').collect::<String>(); //TODO - WHITESPACES SHOULD NOT BE REMOVED IN BETWEEN [] AND ""
     let mut temp:Vec<SmartValue> = Vec::new(); //temp value that will be returned
     let mut buf:Vec<char> = Vec::new(); //buffer for number building
     let mut func_buffer:Vec<Vec<SmartValue>> = Vec::new(); //holds function parameters
@@ -540,6 +540,7 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
     let mut operator = false; //used to keep track of operator usage
     let mut function = false; //used to keep track of functions
     let mut function_name = String::new(); //used to keep track of identifier of last function
+    let mut paren_open = false; //used to keep track of a prior open parentheses
     let to_dec = |x:&Vec<char>| {
         let mut buffer = String::new();
         for i in x{
@@ -624,6 +625,7 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
             counter += 1;
             position += 1;
             operator = false;
+            paren_open = true;
             continue
         }
 
@@ -644,12 +646,19 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
             number = false;
             operator = false;
             dec = false;
+            paren_open = false;
             counter -= 1;
             position += 1;
             continue
         }
         //check if it is an operator
         if OPR.contains(nth){
+
+            if paren_open && NUM.contains(next_nth.ok_or(GenericError)?){
+                buf.push('-');
+                continue;
+            }
+
             //if buf currently isn't building a number and the next char isn't a number,
             //and it is not a - sign, then something is wrong.
             if !number && (!NUM.contains(next_nth.ok_or(GenericError)?) && next_nth.ok_or(GenericError)? != '(') && nth != '-'{
@@ -706,9 +715,12 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
             buf.push(nth);
             number = true;
             operator = false;
+            paren_open = false;
             position += 1;
             continue
         }
+
+
         //check if it contains symbols
         if SYM.contains(nth){
             if number{
@@ -729,7 +741,7 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
                         buf.clear();
                         continue
                     }
-                    temp.push(SmartValue::Operator('*')); //multiplication is inferred if it is a variable
+                    //temp.push(SmartValue::Operator('*')); //multiplication is inferred if it is a variable
                     //TODO: This if statement should also include variable and function
                     if !rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()){
                         return Err(Box::new(UnknownIdentifierError{position, identifier:foo.clone()}))
@@ -743,6 +755,7 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
 
             number = false;
             operator = false;
+            paren_open = false;
             position += 1;
         }
 

@@ -1,10 +1,11 @@
 use std::ops::Deref;
-use crate::rcas_lib::{composer, calculate, Wrapper, RCas};
+use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
 use crate::rcas_gui::{Shell};
 use fltk::{*, app, app::App, text::*, window::*};
 use std::time::Instant;
+use std::collections::{HashMap, HashSet};
 
 mod rcas_lib;
 mod rcas_functions;
@@ -17,8 +18,6 @@ fn main() {
     //let cas = rcas_lib::RCas::new();
     //let result = cas.query(expression);
     //println!("{}", result);
-
-
 
     let app = App::default().with_scheme(app::Scheme::Gtk);
     let mut window:Window = Window::default()

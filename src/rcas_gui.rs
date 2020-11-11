@@ -1,7 +1,9 @@
-use fltk::{*, app, app::App, text::*, window::*};
+use fltk::{*, app, app::App, text::*, window::*, table::*};
 //use std::ops::{Deref, DerefMut};
 use crate::rcas_lib::{*, RCas, CalculationMode};
 use std::ops::{Deref, DerefMut};
+use fltk::browser::{BrowserScrollbar, Browser};
+
 
 #[derive(Debug, Clone)]
 pub(crate) struct Shell{
@@ -62,4 +64,27 @@ impl Deref for Shell{
 
 impl DerefMut for Shell{
     fn deref_mut(&mut self) -> &mut Self::Target { &mut self.term}
+}
+#[derive(Debug, Clone)]
+pub( crate) struct EnvironmentTable{
+    env: Browser
+}
+
+impl EnvironmentTable{
+    pub fn new(x:i32, y:i32, height:i32, width:i32, title:&str){
+        //let env = Browser::new(x,y,height,width,title);
+    }
+
+    fn add(&mut self, id:String){
+
+    }
+}
+
+impl Deref for EnvironmentTable{
+    type Target = Browser;
+    fn deref(&self) -> &Self::Target {&self.env }
+}
+
+impl DerefMut for EnvironmentTable{
+    fn deref_mut(&mut self) -> &mut Self::Target {&mut self.env }
 }
