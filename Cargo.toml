@@ -9,4 +9,4 @@ edition = "2018"
 [dependencies]
 rust_decimal = "1.7.0"
 plotters = "0.3.0"
-fltk = "0.10.2"
+fltk = "0.10.7"

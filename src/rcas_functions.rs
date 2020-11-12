@@ -68,14 +68,8 @@ pub fn modulo(input_to_mod:Decimal, modder:Decimal) -> Option<Decimal>{
     None
 }
 
-pub fn sec(input:Decimal) -> Decimal{
-    Decimal::from_f64(1.0/input.to_f64().unwrap().cos()).unwrap()
-}
+pub fn sec(input:Decimal) -> Decimal{ Decimal::from_f64(1.0/input.to_f64().unwrap().cos()).unwrap() }
 
-pub fn csc(input:Decimal) -> Decimal{
-    Decimal::from_f64(1.0/input.to_f64().unwrap().sin()).unwrap()
-}
+pub fn csc(input:Decimal) -> Decimal{ Decimal::from_f64(1.0/input.to_f64().unwrap().sin()).unwrap() }
 
-pub fn cot(input:Decimal) -> Decimal{
-    Decimal::from_f64(input.to_f64().unwrap().cos()/input.to_f64().unwrap().sin()).unwrap()
-}
+pub fn cot(input:Decimal) -> Decimal{ Decimal::from_f64(input.to_f64().unwrap().cos()/input.to_f64().unwrap().sin()).unwrap() }
