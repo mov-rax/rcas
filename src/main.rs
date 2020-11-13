@@ -9,6 +9,12 @@ use std::collections::{HashMap, HashSet};
 use fltk::menu::MenuItem;
 use fltk::image::PngImage;
 use std::env;
+use std::rc::Rc;
+use std::cell::RefCell;
+use async_std;
+use std::borrow::Borrow;
+use async_std::sync::Arc;
+use std::sync::Mutex;
 
 mod rcas_lib;
 mod rcas_functions;
@@ -25,7 +31,6 @@ fn main() {
 
     //let name_mario= String::from("Mario Vega");
 
-    //println!("DIR {}", env::current_dir().unwrap().as_path().to_string_lossy().to_string());
 
     let app = App::default().with_scheme(app::Scheme::Gtk);
     let mut window:Window = Window::default()
@@ -34,14 +39,13 @@ fn main() {
         .with_label("RCAS 1.0");
     let mut shell = Shell::new(5,5,490,790);
     let mut environment = EnvironmentTable::new(500, 5, 500, 407, "Environment");
-
     let mut plot_viewer = PlotViewer::new(500, 450, 500, 333, "Plot Viewer");
 
-
     let mut cas = RCas::new();
+
     //let mut controller = GUIController::new();
 
-    window.make_resizable(true);
+    //window.make_resizable(true);
     window.end();
     window.show();
 
@@ -51,15 +55,67 @@ fn main() {
     environment.add("F\t\t\t\t\tFunction".to_string());
     //end of testing
 
+    let mut plot_viewer_clone = plot_viewer.clone();
+    let plot_viewer = Rc::from(RefCell::from(plot_viewer));
+    let pvc = plot_viewer.clone();
+    let window = Rc::from(RefCell::from(window));
+    let win = window.clone();
+    plot_viewer_clone.handle(move |ev:Event| {
+        match ev{
+            Event::Push => {
+                let click = app::event_button() == 1; // true if left click, false if right
+                let mut pvc = pvc.borrow_mut(); // gets a mutable reference to the plot viewer, it is necessary for removing a plot
+                let mut win = win.borrow_mut(); // gets a mutable reference to the window, which is necessary for refreshing the window.
+                if let Some(image_frame) = pvc.value(){ // Gets the currently visible group
+                    if let Some(locations) = pvc.img_locations.get(&image_frame.label()){ //get the location of the image
+                        let (i_x,i_y,i_w,i_h) = *locations;
+                        if !click && app::event_inside(i_x,i_y,i_w,i_h){ // Checks to see if the click is within the image's bounds
+                            let choices = ["Save Plot", "Remove Plot"];
+                            let mut item = MenuItem::new(&choices);
+                            let (x,y) = app::event_coords(); //coordinates of the click
+                            if let Some(choice) = item.popup(x,y){ // Shows the menu and gets the choice (if any was chosen)
+                                match &*choice.label().unwrap(){
+                                    //TODO - IMPLEMENT THE SAVING FUNCTION
+                                    "Remove Plot" => {
+                                        app::delete_widget(pvc.value().unwrap()); // REMOVES THE PLOT
+                                        win.redraw();
+                                    },
+                                    "Save Plot" => {
+                                        pvc.save_visible_plot_prompt();
+                                    }
+                                    _ => {return false}
+                                }
+                            }
+                            pvc.redraw();
+                            return true;
+                        }
+                    }
+                }
+                pvc.redraw();
+                false
+            },
+            _ => false
+        }
+    });
+
+    let pvc = plot_viewer.clone(); // a nice reference to the plot viewer
     let mut shell_clone = shell.clone();
     shell_clone.handle( move |ev:Event| {
         match ev{
             Event::KeyDown => match app::event_key(){ // gets a keypress
                 Key::Enter => {
+                    let mut pvc = pvc.borrow_mut(); // Gets a mutable reference to the PlotViewer
+
                     shell.append("\n"); // newline character
                     let now = Instant::now();
                     let result = cas.query(&shell.query); // gets the result
                     println!("QUERY DURATION: {} µs", now.elapsed().as_micros());
+
+                    pvc.begin();
+                    pvc.add_test_img_tab("OOGA"); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
+                    pvc.redraw();
+                    pvc.end();
+
                     shell.append(&format!("{}\n{}", result, &shell.mode.to_string())); // appends the result to the shell
                     shell.query.clear(); // clears the current query
 
@@ -117,7 +173,5 @@ fn main() {
         }
     });
 
-
     app.run().unwrap();
-
 }

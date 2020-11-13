@@ -1,9 +1,15 @@
-use fltk::{*, app, app::App, text::*, window::*, table::*};
+use fltk::{app, app::App, text::*, window::*, table::*};
 //use std::ops::{Deref, DerefMut};
 use crate::rcas_lib::{*, RCas, CalculationMode};
 use std::ops::{Deref, DerefMut};
-use fltk::browser::{BrowserScrollbar, Browser, MultiBrowser};
+use fltk::browser::{BrowserScrollbar, Browser, MultiBrowser, FileBrowser};
 use fltk::group::{Tabs, Group};
+use fltk::image::{PngImage as FltkImage, SvgImage};
+use fltk::frame::Frame;
+use std::collections::HashMap;
+use fltk_sys::widget::Fl_Widget;
+use fltk::menu::MenuItem;
+use fltk::dialog::{FileDialog, FileDialogType, FileDialogOptions, HelpDialog, BeepType};
 
 
 #[derive(Debug, Clone)]
@@ -123,25 +129,109 @@ impl DerefMut for EnvironmentTable{
     fn deref_mut(&mut self) -> &mut Self::Target {&mut self.env }
 }
 
+#[derive(Debug, Clone)]
 pub struct PlotViewer{
-    env: Tabs
+    env: Tabs,
+    pub img_locations: HashMap<String, (i32,i32,i32,i32)> //x,y,width,height
 }
 
 impl PlotViewer{
-    pub fn new(x:i32,y:i32,width:i32,height:i32,title:&str) -> PlotViewer{
+    pub fn new(x:i32,y:i32,width:i32,height:i32,title:&str) -> Self{
         let mut env = Tabs::new(x,y,width,height,title);
-        let mut default_tab = Group::new(0,y-30,width,height,"DEFAULT?");
-        default_tab.end();
-        let mut default_tab2 = Group::new(0,y-30,width,height,"DEFAULT2?");
-        default_tab2.end();
-        let mut default_tab3 = Group::new(0,y-30,width,height,"DEFAULT3?");
-        default_tab3.end();
-        //env.set_value(&default_tab);
-        //default_tab.set_color(Color::Red);
-        println!("{:?}", env.client_area());
-        //default_tab.end();
-        PlotViewer {env}
+        env.set_tab_align(Align::Center);
+        PlotViewer {env, img_locations: HashMap::new()}
     }
+
+    /// Used only for testing
+    pub fn add_dummy_tab(&mut self, label:&str){
+        let (x,y,width,height) = self.client_area();
+        let mut dummy = Group::new(x,y-30,width,height, label);
+        dummy.end();
+    }
+
+    pub fn add_test_img_tab(&mut self, label:&str){
+        let (x, y) = self.get_base_coords_image();
+        let mut dummy = self.gen_tab(label);
+        let mut img = fltk::image::SvgImage::load("test.svg").unwrap();
+        img.scale(dummy.width(), ((dummy.height() as f32)*0.93).round() as i32, true, true);
+        self.img_locations.insert(String::from(label), (dummy.x(), dummy.y(), dummy.width(), ((dummy.height() as f32)*0.93).round() as i32));
+        //println!("dummy: {:?}", (dummy.width(),dummy.height()));
+        //println!("img: {:?}", (img.width(),img.height()));
+
+        let mut frame = Frame::new(x,y,dummy.width(),dummy.height(),"");
+        frame.set_image(Some(img));
+        dummy.end();
+    }
+
+    pub fn add_dummy_tab_with_text(&mut self, tab_label:&str, text:&str){
+        let (x,y) = self.get_base_coords_text();
+        let mut dummy = self.gen_tab(tab_label);
+        let mut frame = Frame::new(x,y,10,2,text);
+        dummy.end();
+    }
+
+    /// Used to get the coordinates for inserting text into a PlotViewer tab
+    pub fn get_base_coords_text(&self) -> (i32, i32){
+        (self.x()+20,self.y()+15)
+    }
+
+    /// Used to get the coordinates for inserting images into a PlotViewer tab
+    pub fn get_base_coords_image(&self) -> (i32,i32){
+        (self.x(),self.y()+5)
+    }
+
+    /// Generates a new group that conforms to PlotViewer tab
+    fn gen_tab(&mut self, label:&str) -> Group{
+        let (x,y,width,height) = self.client_area();
+        Group::new(x,y-30,width,height,label)
+    }
+
+    pub fn save_visible_plot_prompt(&mut self){
+        if let Some(group) = self.value(){
+            if let Some(widget) = group.child(0){
+                let ptr = unsafe {widget.as_widget_ptr()};
+                let frame = unsafe {Frame::from_widget_ptr(ptr)};
+                if let Some(image) = frame.image(){ // image is a Box<dyn ImageExt>
+                    let ptr = unsafe {image.as_image_ptr()}; // turns that pesky box into a pointer to an image
+                    let image = unsafe{ SvgImage::from_image_ptr(ptr)}; // THIS IS THE IMAGE!!!! :)
+                    let mut image = image.copy(); // Done for SAFETY reasons. We don't want the user removing the image from under us!! (Also, copy() does a deep copy of the image, unlike clone())
+                    let mut dialog = FileDialog::new(FileDialogType::BrowseSaveFile);
+                    dialog.set_title("Save Plot as...");
+                    dialog.set_option(FileDialogOptions::SaveAsConfirm);
+                    dialog.set_filter("PNG Image\t*.png\nJPEG Image\t*.{jpg,jpeg}\nSVG Image\t*.svg\nGIF Image\t*.gif\nBITMAP Image\t*.bmp");
+                    dialog.show();
+                    fltk::dialog::alert(300,200,"This is a test of the ALERT system. All is fine.");
+                    if let Some(error) = dialog.error_message(){
+                        if error != "No error".to_string(){
+                            println!("ERROR: {}", error);
+                            fltk::dialog::beep(BeepType::Error);
+                            fltk::dialog::alert(300,200,&format!("ERROR: {}", error));
+                        }
+                    }
+                    // let mut win = Window::default()
+                    //     .with_size(500,200)
+                    //     .center_screen()
+                    //     .with_label("Save Plot as");
+                    // let mut frm = Frame::new(295,10,200,200,"Plot Preview");
+                    // let mut file_browser = FileBrowser::new(10,10,300,300,"BROWSE");
+                    // file_browser.set_filetype(FileType)
+                    // frm.set_tooltip("This is the pizza you ordered");
+                    // image.scale(frm.width(), frm.height(), true, true);
+                    // println!("{:?}", (image.width(), image.height()));
+                    //frm.set_image(Some(image));
+
+                    //win.end();
+                    //win.show();
+                }
+            }
+        }
+    }
+
+    // pub unsafe fn from_ptr(ptr: *mut Self) -> Self{
+    //     let env = (*ptr).env;
+    //     let img_locations = (*ptr).img_locations;
+    //     Self {env, img_locations}
+    // }
 }
 
 impl Deref for PlotViewer{
