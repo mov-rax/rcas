@@ -49,7 +49,7 @@ fn main() {
 
     //let mut controller = GUIController::new();
 
-    //window.make_resizable(true);
+    window.make_resizable(true);
     window.end();
     window.show();
 
@@ -82,7 +82,10 @@ fn main() {
                                     //TODO - IMPLEMENT THE SAVING FUNCTION
                                     "Remove Plot" => {
                                         app::delete_widget(pvc.value().unwrap()); // REMOVES THE PLOT
-                                        win.redraw();
+                                        pvc.redraw();
+                                        let (width, height) = (win.width(), win.height());
+                                        win.set_size(width+1,height+1);
+                                        win.set_size(width,height);
                                     },
                                     "Save Plot" => {
                                         pvc.save_visible_plot_prompt();
