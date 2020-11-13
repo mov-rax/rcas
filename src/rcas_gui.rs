@@ -10,7 +10,11 @@ use std::collections::HashMap;
 use fltk_sys::widget::Fl_Widget;
 use fltk::menu::MenuItem;
 use fltk::dialog::{FileDialog, FileDialogType, FileDialogOptions, HelpDialog, BeepType};
-
+use std::fs::File;
+use std::io::Write;
+use std::ptr::slice_from_raw_parts;
+use resvg;
+use usvg::SystemFontDB;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Shell{
@@ -193,46 +197,75 @@ impl PlotViewer{
                 let frame = unsafe {Frame::from_widget_ptr(ptr)};
                 if let Some(image) = frame.image(){ // image is a Box<dyn ImageExt>
                     let ptr = unsafe {image.as_image_ptr()}; // turns that pesky box into a pointer to an image
-                    let image = unsafe{ SvgImage::from_image_ptr(ptr)}; // THIS IS THE IMAGE!!!! :)
-                    let mut image = image.copy(); // Done for SAFETY reasons. We don't want the user removing the image from under us!! (Also, copy() does a deep copy of the image, unlike clone())
+                    let svg_image = unsafe{ SvgImage::from_image_ptr(ptr)}; // THIS IS THE IMAGE!!!! :)
+                    let mut svg_img = svg_image.copy(); // Done for SAFETY reasons. We don't want the user removing the image from under us!! (Also, copy() does a deep copy of the image, unlike clone())
                     let mut dialog = FileDialog::new(FileDialogType::BrowseSaveFile);
                     dialog.set_title("Save Plot as...");
                     dialog.set_option(FileDialogOptions::SaveAsConfirm);
                     dialog.set_filter("PNG Image\t*.png\nJPEG Image\t*.{jpg,jpeg}\nSVG Image\t*.svg\nGIF Image\t*.gif\nBITMAP Image\t*.bmp");
+                    dialog.set_preset_file("*.png");
                     dialog.show();
-                    fltk::dialog::alert(300,200,"This is a test of the ALERT system. All is fine.");
+                    //fltk::dialog::alert(300,200,"This is a test of the ALERT system. All is fine.");
                     if let Some(error) = dialog.error_message(){
-                        if error != "No error".to_string(){
+                        if error != "No error".to_string(){ // if there was an error
                             println!("ERROR: {}", error);
                             fltk::dialog::beep(BeepType::Error);
                             fltk::dialog::alert(300,200,&format!("ERROR: {}", error));
+                        } else { // there was no error. PROCEED THE PLOT-SAVING PROCESS :)
+                            println!("FILENAME:\t{:?}", dialog.filenames());
+                            let path = dialog.filename().to_string_lossy().to_string();
+
+                            // let mut opt = usvg::Options::default();
+                            // opt.path = Some(dialog.filename().clone());
+                            // opt.fontdb.load_system_fonts();
+                            // let tree = usvg::Tree::from_str()
+
+
+                            // let mut image_converted:Option<*const *const u8> = None;
+                            // let mut image_type = String::new();
+                            // let mut data_size:Option<u32> = None;
+                            // if path.contains(".svg"){
+                            //     image_converted = Some(svg_img.to_raw_data());
+                            //     image_type.push_str(".str");
+                            //     data_size = Some(svg_img.data_w()* svg_img.data_h());
+                            // } else if path.contains(".jpg") || path.contains(".jpeg"){
+                            //     let image = svg_img.into_jpeg().unwrap();
+                            //     image_converted = Some(image.to_raw_data());
+                            //     image_type.push_str(".jpeg");
+                            //     data_size = Some(image.data_w()*image.data_h());
+                            // } else if path.contains(".gif"){ // GIF WILL BE BMP FOR THE TIME BEING
+                            //     let image = svg_img.into_bmp().unwrap();
+                            //     image_converted = Some(image.to_raw_data());
+                            //     image_type.push_str(".bmp");
+                            //     data_size = Some(image.data_w()*image.data_h());
+                            // } else if path.contains(".bmp"){
+                            //     let image = svg_img.into_bmp().unwrap();
+                            //     image_converted = Some(image.to_raw_data());
+                            //     image_type.push_str(".bmp");
+                            //     data_size = Some(image.data_w()*image.data_h());
+                            // } else { //If the type is not defined by the user, or if .png is given to the user, then it will default to png
+                            //     let image = svg_img.into_png().unwrap();
+                            //     image_converted = Some(image.to_raw_data());
+                            //     image_type.push_str(".png");
+                            //     data_size = Some(image.data_w()*image.data_h());
+                            // }
+                            // if let Some(raw) = image_converted{
+                            //     let size = data_size.unwrap();
+                            //     println!("DATA: {:?}", raw);
+                            //
+                            // }
+                            //let mut file = File::create(dialog.filename().to_string_lossy().to_string()); // Tries to create a new file
+                            //if let Ok(file) = file{ // If file was successfully created, then we write to the file :)
+
+                            }
                         }
                     }
-                    // let mut win = Window::default()
-                    //     .with_size(500,200)
-                    //     .center_screen()
-                    //     .with_label("Save Plot as");
-                    // let mut frm = Frame::new(295,10,200,200,"Plot Preview");
-                    // let mut file_browser = FileBrowser::new(10,10,300,300,"BROWSE");
-                    // file_browser.set_filetype(FileType)
-                    // frm.set_tooltip("This is the pizza you ordered");
-                    // image.scale(frm.width(), frm.height(), true, true);
-                    // println!("{:?}", (image.width(), image.height()));
-                    //frm.set_image(Some(image));
-
-                    //win.end();
-                    //win.show();
                 }
             }
         }
     }
 
-    // pub unsafe fn from_ptr(ptr: *mut Self) -> Self{
-    //     let env = (*ptr).env;
-    //     let img_locations = (*ptr).img_locations;
-    //     Self {env, img_locations}
-    // }
-}
+
 
 impl Deref for PlotViewer{
     type Target = Tabs;
