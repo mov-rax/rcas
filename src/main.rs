@@ -29,6 +29,10 @@ fn main() {
     //println!("{}", result);
     //Comment by Mario
 
+    // let exp = 2.7182818284590452353602874713527;
+    // let 2(exp);
+    //println!("{}", result);
+
     //let name_mario= String::from("Mario Vega");
 
 
