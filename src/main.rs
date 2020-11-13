@@ -11,9 +11,8 @@ use fltk::image::PngImage;
 use std::env;
 use std::rc::Rc;
 use std::cell::RefCell;
-use async_std;
+
 use std::borrow::Borrow;
-use async_std::sync::Arc;
 use std::sync::Mutex;
 
 mod rcas_lib;

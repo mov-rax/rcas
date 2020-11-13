@@ -7,14 +7,12 @@ use fltk::group::{Tabs, Group};
 use fltk::image::{PngImage as FltkImage, SvgImage};
 use fltk::frame::Frame;
 use std::collections::HashMap;
-use fltk_sys::widget::Fl_Widget;
+//use fltk_sys::widget::Fl_Widget;
 use fltk::menu::MenuItem;
 use fltk::dialog::{FileDialog, FileDialogType, FileDialogOptions, HelpDialog, BeepType};
 use std::fs::File;
 use std::io::Write;
-use std::ptr::slice_from_raw_parts;
-use resvg;
-use usvg::SystemFontDB;
+
 
 #[derive(Debug, Clone)]
 pub(crate) struct Shell{
