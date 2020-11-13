@@ -83,7 +83,7 @@ fn main() {
                                         app::delete_widget(pvc.value().unwrap()); // REMOVES THE PLOT
                                         pvc.redraw();
                                         let (width, height) = (win.width(), win.height());
-                                        win.set_size(width+1,height+1);
+                                        win.set_size(width+1,height+10);
                                         win.set_size(width,height);
                                     },
                                     "Save Plot" => {
