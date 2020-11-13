@@ -9,6 +9,8 @@ use std::ptr::replace;
 use std::ops::Deref;
 use crate::rcas_functions;
 use crate::rcas_functions::SmartFunction;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 //constants
 const ADD:char = '+'; //addition
@@ -79,7 +81,7 @@ impl RCas{
         RCas {}
     }
 
-    pub fn query(&self, input:&str) -> String{
+    pub fn query(&self, input:&str) -> QueryResult{
 
         let number = 55;
 
@@ -88,7 +90,7 @@ impl RCas{
                 let mut wrapper = Wrapper::compose(parsed);
                 //print_sv_vec(&wrapper.values);
                 wrapper.solve();
-                wrapper.to_string()
+                wrapper.to_result()
             },
             Err(error) => {
                 println!("Parsing Error :(");
@@ -122,11 +124,53 @@ impl RCas{
                     info = format!("UNKNOWN IDENTIFIER detected at character {}. {} is NOT A VALID \
                     variable or function name.", &error.position, &error.identifier);
                 }
-                info
+                QueryResult::Error(info)
             }
         }
     }
 
+}
+
+pub enum QueryResult{
+    Simple(String), // Common arithmetic query results will appear here
+    Assign(QueryAssign), // Query result that assigns a value to a variable or function identifier
+    Image(QueryImage), // Query result that returns an Image
+    Execute(Command), // Query result that requires the GUI to execute
+    Error(String) // Returned in case of parsing or function error
+}
+/// Commands that interface with the GUI.
+pub enum Command{
+    ClearScreen, //cls()
+    RemoveCurrentPlot, //clear("current")
+    RemovePlots, //clear("*")
+    ClearEnvironment, //clear("env")
+    ClearAll, //clear("all")
+    SavePlot, //saveplot("magic.png")
+}
+/// A structure that contains a raster (PNG) and vector (SVG) versions of a plot.
+/// The vector is used for displaying a plot in high-resolution.
+/// The raster is used in case of saving the plot to any format.
+pub struct QueryImage{
+    pub raster: Vec<u8>, // raster image (A PNG FILE)
+    pub vector: String, //  vector iamge (AN SVG FILE)
+}
+/// A structure that contains the identifier to data and the data itself.
+pub struct QueryAssign{
+    pub id: String,
+    pub data: DataType,
+}
+
+/// Used to facilitate the transfer of information.
+pub enum DataType{
+    Number(Decimal), // A Number
+    Matrix(Rc<RefCell<SmartMatrix>>), // A reference to a vector of numbers (A reference is used to avoid copying data)
+    Image(QueryImage) // Assigning to a query image
+}
+
+pub struct SmartMatrix{
+    data: Vec<Decimal>,
+    rows: u64,
+    columns: u64,
 }
 
 #[derive(PartialEq, Clone)]
@@ -153,9 +197,14 @@ impl Wrapper{
 
     pub fn to_string(&self) -> String{ sv_vec_string(&self.values) }
 
+    pub fn to_result(&self) -> QueryResult{
+        if self.values.len() == 1{
+            return QueryResult::Simple(self.to_string())
+        }
+        return QueryResult::Error("FUNCTION ERROR".to_string())
+    }
 }
 
-// f(x) = 20x+5
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SmartValue{
@@ -173,7 +222,8 @@ pub enum SmartValue{
     Placeholder(Vec<SmartValue>),
     Range(Decimal,Decimal,Decimal), // Lower, Step, Upper
     Label(String,Vec<SmartValue>), // A label can contains an identifier and a possible expression.
-    Comma
+    Comma,
+    Assign // A special equals = operator. It is used to show that a value is being assigned to an identifier.
 }
 
 impl SmartValue{
