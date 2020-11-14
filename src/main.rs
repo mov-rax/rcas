@@ -1,5 +1,5 @@
 use std::ops::Deref;
-use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue, QueryResult};
+use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
 use crate::rcas_gui::{Shell, EnvironmentTable, PlotViewer};
@@ -14,7 +14,6 @@ use std::cell::RefCell;
 
 use std::borrow::Borrow;
 use std::sync::Mutex;
-use fltk::dialog::BeepType;
 
 mod rcas_lib;
 mod rcas_functions;
@@ -37,7 +36,7 @@ fn main() {
     //let name_mario= String::from("Mario Vega");
 
 
-    let app = App::default().with_scheme(app::Scheme::Base);
+    let app = App::default().with_scheme(app::Scheme::Gtk);
     let mut window:Window = Window::default()
         .with_size(1005, 800)
         .center_screen()
@@ -83,8 +82,10 @@ fn main() {
                                     //TODO - IMPLEMENT THE SAVING FUNCTION
                                     "Remove Plot" => {
                                         app::delete_widget(pvc.value().unwrap()); // REMOVES THE PLOT
-                                        //pvc.redraw();
-                                        win.redraw();
+                                        pvc.redraw();
+                                        let (width, height) = (win.width(), win.height());
+                                        win.set_size(width+1,height+10);
+                                        win.set_size(width,height);
                                     },
                                     "Save Plot" => {
                                         pvc.save_visible_plot_prompt();
@@ -115,15 +116,6 @@ fn main() {
                     shell.append("\n"); // newline character
                     let now = Instant::now();
                     let result = cas.query(&shell.query); // gets the result
-                    let mut answer = String::new();
-                    match result{
-                        QueryResult::Simple(result) => {answer = result},
-                        QueryResult::Error(err) => {
-                            answer = err;
-                            fltk::dialog::beep(BeepType::Error); // a nice beep to show that you did something wrong
-                        },
-                        _ => {}
-                    }
                     println!("QUERY DURATION: {} µs", now.elapsed().as_micros());
 
                     pvc.begin();
@@ -131,7 +123,7 @@ fn main() {
                     pvc.redraw();
                     pvc.end();
 
-                    shell.append(&format!("{}\n{}", answer, &shell.mode.to_string())); // appends the result to the shell
+                    shell.append(&format!("{}\n{}", result, &shell.mode.to_string())); // appends the result to the shell
                     shell.query.clear(); // clears the current query
 
                     true
