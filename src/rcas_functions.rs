@@ -11,6 +11,8 @@ use std::fmt;
 ///Shows to the world all of the standard functions given by default.
 pub static STANDARD_FUNCTIONS:[&str;7] = ["cos", "sin", "tan", "sec", "csc", "cot", "mod"];
 
+/// An object that returns an enum that contains the function
+/// attributed to an identifier.
 pub enum SmartFunction{
     ///INPUT => OUTPUT
     Mono(Box<dyn Fn(Decimal) -> Decimal>),

@@ -12,6 +12,7 @@ use fltk::menu::MenuItem;
 use fltk::dialog::{FileDialog, FileDialogType, FileDialogOptions, HelpDialog, BeepType};
 use std::fs::File;
 use std::io::Write;
+use crate::data::BakedData;
 
 
 #[derive(Debug, Clone)]
@@ -154,7 +155,8 @@ impl PlotViewer{
     pub fn add_test_img_tab(&mut self, label:&str){
         let (x, y) = self.get_base_coords_image();
         let mut dummy = self.gen_tab(label);
-        let mut img = fltk::image::SvgImage::load("test.svg").unwrap();
+        let mut img = fltk::image::SvgImage::from_data(BakedData::get_test_svg()).unwrap();
+        //let mut img = fltk::image::PngImage::from_data(&BakedData::get_test_png()).unwrap();
         img.scale(dummy.width(), ((dummy.height() as f32)*0.93).round() as i32, true, true);
         self.img_locations.insert(String::from(label), (dummy.x(), dummy.y(), dummy.width(), ((dummy.height() as f32)*0.93).round() as i32));
         //println!("dummy: {:?}", (dummy.width(),dummy.height()));
@@ -262,8 +264,6 @@ impl PlotViewer{
             }
         }
     }
-
-
 
 impl Deref for PlotViewer{
     type Target = Tabs;

@@ -19,6 +19,7 @@ use fltk::dialog::BeepType;
 mod rcas_lib;
 mod rcas_functions;
 mod rcas_gui;
+mod data;
 
 
 fn main() {

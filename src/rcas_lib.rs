@@ -83,8 +83,6 @@ impl RCas{
 
     pub fn query(&self, input:&str) -> QueryResult{
 
-        let number = 55;
-
         match parser(input){
             Ok(parsed) => {
                 let mut wrapper = Wrapper::compose(parsed);
@@ -579,7 +577,55 @@ pub fn calculate(input: &mut Vec<SmartValue>){
 pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
     //ONE RULE MUST FOLLOWED, WHICH IS THAT EACH NTH IN THE LOOP CAN ONLY SEE
     //THE NTH IN FRONT OF IT. GOING BACK TO CHECK VALUES IS NOT ALLOWED.
-    let input = input.chars().filter(|x| *x != ' ').collect::<String>(); //TODO - WHITESPACES SHOULD NOT BE REMOVED IN BETWEEN [] AND ""
+    let input = { // [[4 2 3] [4 3 2]]
+        let mut flag = false;
+        let mut count = 0;
+        let mut dq = false;
+        let mut sq = false;
+
+        let tinput = input.chars().filter(|x|{
+            // UNICODE: 0022 -> "
+            // UNICODE: 0027 -> '
+            if count < 0{
+                return false;
+            }
+            if *x == '\u{0022}' || *x == '\u{0027}'{
+                flag = !flag; // flips flag
+            }
+            if *x == '\u{0022}'{
+                dq = !dq;
+            }
+            if *x == '\u{0027}'{
+                sq = !sq;
+            }
+
+            if *x == '[' {
+                count += 1;
+            } else if *x == ']' {
+                count -= 1;
+            }
+            if flag || count != 0{
+                return true;
+            }
+            if *x != ' '{
+                return true;
+            }
+            false
+        }).collect::<String>();
+
+
+        let mut result = Err(FormattingError{position: tinput.len() as u32 });
+        // (A + B + C + (COUNT != 0))' = A'B'C'(COUNT == 0)
+        if !flag && !dq && !sq && count == 0{ // if one of these flags are true, there there was either " ', ' ", present, or a missing closing quotation
+            result = Ok(tinput);
+        }
+        result
+    };
+    let input = match input{
+        Ok(val) => val,
+        Err(err) => return Err(Box::from(err))
+    };
+
     let mut temp:Vec<SmartValue> = Vec::new(); //temp value that will be returned
     let mut buf:Vec<char> = Vec::new(); //buffer for number building
     let mut func_buffer:Vec<Vec<SmartValue>> = Vec::new(); //holds function parameters
@@ -591,11 +637,9 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
     let mut function = false; //used to keep track of functions
     let mut function_name = String::new(); //used to keep track of identifier of last function
     let mut paren_open = false; //used to keep track of a prior open parentheses
+
     let to_dec = |x:&Vec<char>| {
-        let mut buffer = String::new();
-        for i in x{
-            buffer.push(*i);
-        }
+        let buffer = (0..x.len()).map(|i| x[i]).collect::<String>(); // turns a vector of characters into a String
         Decimal::from_str(buffer.as_str())
     };
 
