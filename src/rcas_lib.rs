@@ -83,18 +83,14 @@ impl RCas{
     }
 
     pub fn query(&self, input:&str) -> QueryResult{
-        let parse_time = Instant::now();
+        let time = Instant::now();
         match parser(input){
             Ok(parsed) => {
-                println!("PARSE TIME:\t {} µs", parse_time.elapsed().as_micros());
-                let compose_time = Instant::now();
                 let mut wrapper = Wrapper::compose(parsed);
-                println!("COMPOSE TIME:\t {} µs", compose_time.elapsed().as_micros());
-                //print_sv_vec(&wrapper.values);
-                let solve_time = Instant::now();
                 wrapper.solve();
-                println!("SOLVE TIME:\t {} µs\n\n", solve_time.elapsed().as_micros());
-                wrapper.to_result()
+                let result = wrapper.to_result();
+                println!("QUERY TIME:\t {} µs", time.elapsed().as_micros());
+                result
             },
             Err(error) => {
                 println!("Parsing Error :(");
@@ -411,17 +407,15 @@ fn get_outermost_parentheses(input:&Vec<SmartValue>) -> (usize,usize){
     let mut right= 0;
     let mut counter = 0;
     let mut found_left = false;
-    for x in 0..input.len(){ //gets leftmost
 
+    for x in 0..input.len(){ //gets leftmost
         if input[x] == SmartValue::LParen && !found_left{
             left = x;
-            right= x;
             found_left = true;
         }
         if input[x] == SmartValue::LParen{
             counter += 1;
         }
-
         if input[x] == SmartValue::RParen{
             counter -= 1;
         }
@@ -429,20 +423,12 @@ fn get_outermost_parentheses(input:&Vec<SmartValue>) -> (usize,usize){
             right = x;
             break;
         }
-
-
     }
     (left, right)
 }
 
 fn number_of_parentheses_sections(input: &Vec<SmartValue>) -> usize{
-    let mut count:usize = 0;
-    for x in input{
-        if *x == SmartValue::LParen{
-            count += 1;
-        }
-    }
-    count
+    input.iter().filter(|x| **x == SmartValue::LParen).count()
 }
 
 //for debugging parser result
@@ -469,30 +455,27 @@ pub fn sv_vec_string(sv:&Vec<SmartValue>) -> String {
 /// SmartValue::Placeholder
 pub fn composer(mut input: Vec<SmartValue>) -> Vec<SmartValue>{
     let mut placeholder_locations:Vec<usize> = Vec::new();
-    if number_of_parentheses_sections(&input) == 0{ //no parentheses, therefore, no need to compose.
+    let sections = number_of_parentheses_sections(&input);
+    if sections == 0{ //no parentheses, therefore, no need to compose.
         return input;
     } else {
-        //print_sv_vec(&input);
         //This will replace all parentheses within the same depth.
-        while number_of_parentheses_sections(&input) != 0{
+        for _ in 0..sections{
             let parentheses_locations = get_outermost_parentheses(&input);
-            //println!("{}, {}", parentheses_locations.0, parentheses_locations.1);
             //gets value inside first parentheses and puts it into a Placeholder
-            let subsection = input[parentheses_locations.0+1 .. parentheses_locations.1]
-                .to_vec();
+            let subsection = input[parentheses_locations.0+1 .. parentheses_locations.1].to_vec();
+
             let placeholder = SmartValue::Placeholder(composer(subsection));
             placeholder_locations.push(parentheses_locations.0);
-            for x in parentheses_locations.0 ..parentheses_locations.1{
+            for _ in parentheses_locations.0 ..parentheses_locations.1{
                 input.remove(parentheses_locations.0);
             }
+            //let placeholder = handle.join().unwrap();
             if parentheses_locations.0 == input.len(){
                 input.push(placeholder)
             } else{
                 input[parentheses_locations.0] = placeholder;
             }
-
-            //print_sv_vec(&input)
-
         }
 
         for location in placeholder_locations{
@@ -583,6 +566,8 @@ pub fn calculate(input: &mut Vec<SmartValue>){
 pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
     //ONE RULE MUST FOLLOWED, WHICH IS THAT EACH NTH IN THE LOOP CAN ONLY SEE
     //THE NTH IN FRONT OF IT. GOING BACK TO CHECK VALUES IS NOT ALLOWED.
+
+    // GETS THE INPUT
     let input = { // [[4 2 3] [4 3 2]]
         let mut flag = false;
         let mut count = 0;
@@ -626,6 +611,7 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
         }
         result
     };
+
     let input = match input{
         Ok(val) => val,
         Err(err) => return Err(Box::from(err))
@@ -643,6 +629,7 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
     let mut function_name = String::new(); //used to keep track of identifier of last function
     let mut paren_open = false; //used to keep track of a prior open parentheses
 
+    // Converts a vector of characters into a Result<Decimal, Err>
     let to_dec = |x:&Vec<char>| {
         let buffer = (0..x.len()).map(|i| x[i]).collect::<String>(); // turns a vector of characters into a String
         Decimal::from_str(buffer.as_str())

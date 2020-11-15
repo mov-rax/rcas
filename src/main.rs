@@ -11,9 +11,11 @@ use fltk::image::PngImage;
 use std::env;
 use std::rc::Rc;
 use std::cell::RefCell;
+use clipboard::{ClipboardProvider, ClipboardContext};
 
 use std::borrow::Borrow;
 use std::sync::Mutex;
+use fltk::app::event_key;
 
 mod rcas_lib;
 mod rcas_functions;
@@ -35,7 +37,6 @@ fn main() {
 
     //let name_mario= String::from("Mario Vega");
 
-
     let app = App::default().with_scheme(app::Scheme::Gtk);
     let mut window:Window = Window::default()
         .with_size(1005, 800)
@@ -44,7 +45,6 @@ fn main() {
     let mut shell = Shell::new(5,5,490,790);
     let mut environment = EnvironmentTable::new(500, 5, 500, 407, "Environment");
     let mut plot_viewer = PlotViewer::new(500, 450, 500, 333, "Plot Viewer");
-
     let mut cas = RCas::new();
 
     //let mut controller = GUIController::new();
@@ -105,18 +105,19 @@ fn main() {
         }
     });
 
+    let mut controlled = false;
     let pvc = plot_viewer.clone(); // a nice reference to the plot viewer
     let mut shell_clone = shell.clone();
     shell_clone.handle( move |ev:Event| {
         match ev{
             Event::KeyDown => match app::event_key(){ // gets a keypress
-                Key::Enter => {
+                Key::Enter | Key::KPEnter => {
                     let mut pvc = pvc.borrow_mut(); // Gets a mutable reference to the PlotViewer
 
                     shell.append("\n"); // newline character
-                    let now = Instant::now();
+                    //let now = Instant::now();
                     let result = cas.query(&shell.query); // gets the result
-                    println!("QUERY DURATION: {} µs", now.elapsed().as_micros());
+                    //println!("QUERY DURATION: {} µs", now.elapsed().as_micros());
                     let mut answer = String::new();
                     match result{
                         QueryResult::Simple(result) => {answer = result},
@@ -165,17 +166,36 @@ fn main() {
                     shell.append(&*text);
                     shell.query = text;
                     true
-                }
-                _ => { // ANY OTHER KEY
+                },
+                k => {
+                    //println!("{:?}", &k);
+                    if k == Key::ControlL { controlled = true;}
+                    if k == Key::from_i32(0x76) && controlled{ //CONTROL-V (PASTE)
+                        controlled = false;
+                        let mut cb:ClipboardContext = clipboard::ClipboardProvider::new().unwrap(); // Object that lets us get text in the clipboard :)
+                        if let Ok(text) = cb.get_contents(){
+                            println!("{}", &text);
+                            shell.append(&*text);
+                            shell.query.push_str(&*text);
+                        }
+                        return true;
+                    }
+                    if k == Key::from_i32(0x63) && controlled{ //CONTROL-C (COPY)
+
+                        return true;
+                    }
+                    // ANY OTHER KEY
                     let key = app::event_text();
                     shell.append(&key);
                     shell.query.push_str(&key);
                     true
                 }
-            }
+            },
             _ => false, //any other event that is not needed
         }
     });
+
+    shell_clone.set_callback(|| println!("EEE"));
 
     let mut environment_clone = environment.clone();
     environment_clone.handle(move |ev:Event|{
