@@ -11,6 +11,7 @@ use crate::rcas_functions;
 use crate::rcas_functions::SmartFunction;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::time::Instant;
 
 //constants
 const ADD:char = '+'; //addition
@@ -82,12 +83,17 @@ impl RCas{
     }
 
     pub fn query(&self, input:&str) -> QueryResult{
-
+        let parse_time = Instant::now();
         match parser(input){
             Ok(parsed) => {
+                println!("PARSE TIME:\t {} µs", parse_time.elapsed().as_micros());
+                let compose_time = Instant::now();
                 let mut wrapper = Wrapper::compose(parsed);
+                println!("COMPOSE TIME:\t {} µs", compose_time.elapsed().as_micros());
                 //print_sv_vec(&wrapper.values);
+                let solve_time = Instant::now();
                 wrapper.solve();
+                println!("SOLVE TIME:\t {} µs\n\n", solve_time.elapsed().as_micros());
                 wrapper.to_result()
             },
             Err(error) => {
@@ -612,7 +618,6 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
             }
             false
         }).collect::<String>();
-
 
         let mut result = Err(FormattingError{position: tinput.len() as u32 });
         // (A + B + C + (COUNT != 0))' = A'B'C'(COUNT == 0)

@@ -1,5 +1,5 @@
 use std::ops::Deref;
-use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue};
+use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue, QueryResult};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
 use crate::rcas_gui::{Shell, EnvironmentTable, PlotViewer};
@@ -117,14 +117,22 @@ fn main() {
                     let now = Instant::now();
                     let result = cas.query(&shell.query); // gets the result
                     println!("QUERY DURATION: {} µs", now.elapsed().as_micros());
-
+                    let mut answer = String::new();
+                    match result{
+                        QueryResult::Simple(result) => {answer = result},
+                        QueryResult::Error(err) => {
+                            answer = err;
+                            fltk::dialog::beep(fltk::dialog::BeepType::Error); // a nice beep to show that you did something wrong
+                        },
+                        _ => {}
+                    }
                     pvc.begin();
                     pvc.add_test_img_tab("OOGA"); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
                     pvc.redraw();
                     pvc.end();
 
-                    shell.append(&format!("{}\n{}", result, &shell.mode.to_string())); // appends the result to the shell
-                    shell.query.clear(); // clears the current query
+                    shell.append(&format!("{}\n{}", answer, &shell.mode.to_string())); // appends the result to the shell
+                    shell.renew_query(); // clears the current query and puts its value into history
 
                     true
                 },
@@ -138,6 +146,26 @@ fn main() {
                         false
                     }
                 },
+                Key::Up => {
+                    let len = shell.text().len() as u32;
+                    let query_len = shell.query.len() as u32;
+                    shell.buffer().unwrap().remove(len-query_len, len);
+                    shell.query.clear();
+                    let text = shell.older_history();
+                    shell.append(&*text);
+                    shell.query = text;
+                    true
+                },
+                Key::Down => {
+                    let len = shell.text().len() as u32;
+                    let query_len = shell.query.len() as u32;
+                    shell.buffer().unwrap().remove(len-query_len, len);
+                    shell.query.clear();
+                    let text = shell.newer_history();
+                    shell.append(&*text);
+                    shell.query = text;
+                    true
+                }
                 _ => { // ANY OTHER KEY
                     let key = app::event_text();
                     shell.append(&key);

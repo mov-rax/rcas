@@ -19,7 +19,9 @@ use crate::data::BakedData;
 pub(crate) struct Shell{
     term: SimpleTerminal,
     pub(crate) mode: CalculationMode,
-    pub(crate) query: String
+    pub(crate) query: String,
+    history:Vec<String>,
+    history_pos:usize
 }
 
 impl Shell{
@@ -51,14 +53,41 @@ impl Shell{
         let mut shell = Shell {
             term,
             mode,
-            query: String::new()
+            query: String::new(),
+            history: Vec::new(),
+            history_pos: 0
         };
         shell.append(&shell.mode.to_string());
         shell
     }
 
-    pub(crate) fn append(&mut self, text: &str){
-        self.term.append(text);
+    pub(crate) fn append(&mut self, text: &str) { self.term.append(text); }
+
+    pub fn renew_query(&mut self){
+        let query_copy = self.query.clone();
+        self.history.push(query_copy);
+        self.query.clear();
+        self.history_pos = self.history.len();
+    }
+
+
+    pub fn older_history(&mut self) -> String{
+        if self.history_pos > 0{
+            self.history_pos -= 1;
+        } else {
+            return self.history[0].clone();
+        }
+        self.history[self.history_pos].clone()
+    }
+
+    //makes you go up history, ya know?
+    pub fn newer_history(&mut self) -> String{
+        if self.history_pos < self.history.len()-1{
+            self.history_pos += 1;
+        } else{
+            return "".to_string();
+        }
+        self.history[self.history_pos].clone()
     }
 
     /// Sets the Shell's calculation mode.
