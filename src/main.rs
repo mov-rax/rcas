@@ -147,7 +147,7 @@ fn main() {
                         false
                     }
                 },
-                Key::Up => {
+                Key::Up => { // Goes up the entries
                     let len = shell.text().len() as u32;
                     let query_len = shell.query.len() as u32;
                     shell.buffer().unwrap().remove(len-query_len, len);
@@ -157,7 +157,7 @@ fn main() {
                     shell.query = text;
                     true
                 },
-                Key::Down => {
+                Key::Down => { // goes down the entries
                     let len = shell.text().len() as u32;
                     let query_len = shell.query.len() as u32;
                     shell.buffer().unwrap().remove(len-query_len, len);
