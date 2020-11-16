@@ -16,6 +16,7 @@ use clipboard::{ClipboardProvider, ClipboardContext};
 use std::borrow::Borrow;
 use std::sync::Mutex;
 use fltk::app::event_key;
+use fltk::table::Table;
 
 mod rcas_lib;
 mod rcas_functions;
@@ -206,6 +207,16 @@ fn main() {
                     if app::event_clicks(){ // DOUBLE LEFT CLICK!
                         let mut table = MatrixView::new("TEST TABLE");
                         table.show();
+                        table.handle2(move |oui:Table, ev:Event| match ev{
+                            Event::Push => {
+                                if app::event_clicks() { // if double clicky
+                                    println!("Double clicky");
+                                }
+                                true
+                            },
+                            _ => false,
+                        });
+
                          // TODO - IMPLEMENT EDITOR HERE
                     }
 

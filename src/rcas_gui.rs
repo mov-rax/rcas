@@ -316,7 +316,7 @@ pub struct MatrixView{
 
 impl MatrixView{
     pub fn new(title:&str) -> Self{
-        let mut win = Window::default()
+        let mut win = DoubleWindow::default()
             .with_size(600, 300)
             .center_screen()
             .with_label(title);
@@ -368,11 +368,11 @@ impl MatrixView{
     fn draw_data(mut ranges: RefMut<Option<(Range<i32>, Range<i32>)>>, txt: &str, x:i32, y:i32, w: i32, h: i32, selected:bool) {
         fltk::draw::push_clip(x, y, w, h);
 
-        if app::event() == Event::Released{
+        if app::event() == Event::Push{ //if you click anywhere, the ranges are reset and they are no longer colored :)
             *ranges = None;
         }
 
-        if app::event() == Event::Drag {
+        if app::event() == Event::Drag || app::event() == Event::MouseWheel{ // occurs when you drag your mouse or use your mouse wheel
             if *ranges == None{
                 *ranges = Some(((x..x), (y..y))); // creating a range
             } else {
