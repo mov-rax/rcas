@@ -15,6 +15,7 @@ use std::io::Write;
 use crate::data::BakedData;
 use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
+use std::any::Any;
 
 const COLOR_SELECTED_FILL:u32 = 0xB7C6E0;
 const COLOR_SELECTED_BORDER:u32 = 0x0F0F0F;
@@ -169,14 +170,15 @@ impl DerefMut for EnvironmentTable{
 #[derive(Debug, Clone)]
 pub struct PlotViewer{
     env: Tabs,
-    pub img_locations: HashMap<String, (i32,i32,i32,i32)> //x,y,width,height
+    pub img_locations: HashMap<String, (i32,i32,i32,i32)>, //x,y,width,height
+    tabs: Vec<Group>
 }
 
 impl PlotViewer{
     pub fn new(x:i32,y:i32,width:i32,height:i32,title:&str) -> Self{
         let mut env = Tabs::new(x,y,width,height,title);
         env.set_tab_align(Align::Center);
-        PlotViewer {env, img_locations: HashMap::new()}
+        PlotViewer {env, img_locations: HashMap::new(), tabs: Vec::new()}
     }
 
     /// Used only for testing
@@ -199,10 +201,36 @@ impl PlotViewer{
         let mut frame = Frame::new(x,y,dummy.width(),dummy.height(),"");
         frame.set_image(Some(img));
         dummy.end();
+        self.tabs.push(dummy); // keeps track of all the tabs
+    }
+
+    pub fn remove_visible_tab(&mut self){
+        let mut env = self.env.clone(); // done because borrow checker reasons, cannot find value() with &mut, and there was already a borrow.
+        self.tabs = (0..self.tabs.len()).filter_map(|i| {
+            if unsafe {self.tabs[i].as_widget_ptr() as u64 != env.value().unwrap().as_widget_ptr() as u64}{ // unsafe required to find the tab efficiently.
+                return Some(self.tabs[i].clone());
+            } else {
+                println!("REMOVING PLOT ON INDEX {}", i);
+            }
+            None
+        }).collect(); // this iteration removes from the tabs vec the plot that is about to be removed.
+        app::delete_widget(self.value().unwrap());
+        self.redraw();
     }
 
     pub fn resize_image(&mut self){
+        for i in 0..self.tabs.len(){
+            if let Some(frame) = self.tabs[i].child(0){
+                let ptr = unsafe{frame.as_widget_ptr()};
+                let frame = unsafe {Frame::from_widget_ptr(ptr)};
+                if let Some(image) = frame.image(){
+                    let ptr = unsafe {image.as_image_ptr()};
+                    let mut svg_image = unsafe{ SvgImage::from_image_ptr(ptr)}; // THIS IS THE IMAGE!!!! :)
+                    svg_image.scale(self.tabs[i].width(), ((self.tabs[i].height() as f32)*0.93).round() as i32, true, true);
+                }
 
+            }
+        }
     }
 
     pub fn add_dummy_tab_with_text(&mut self, tab_label:&str, text:&str){

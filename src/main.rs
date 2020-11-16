@@ -84,8 +84,7 @@ fn main() {
                                 match &*choice.label().unwrap(){
                                     //TODO - IMPLEMENT THE SAVING FUNCTION
                                     "Remove Plot" => {
-                                        app::delete_widget(pvc.value().unwrap()); // REMOVES THE PLOT
-                                        pvc.redraw();
+                                        pvc.remove_visible_tab(); // Safely removes the currently visible plot
                                         let (width,height) = (win.width(), win.height());
                                         win.set_size(width+1,height+1);
                                         win.set_size(width,height);
@@ -105,12 +104,17 @@ fn main() {
                 false
             },
             _ => {
-                let mut win = window.borrow_mut();
-                if last_window_size != (win.width(), win.height()){ // CHECKS TO SEE IF THE APPLICATION WINDOW WAS RESIZED!
-                    last_window_size = (win.width(), win.height());
-
-                    return true;
+                let mut win = window.try_borrow_mut();
+                if let Ok(win) = win{
+                    if last_window_size != (win.width(), win.height()){ // CHECKS TO SEE IF THE APPLICATION WINDOW WAS RESIZED!
+                        last_window_size = (win.width(), win.height());
+                        if let Ok(mut pvc) = pvc.try_borrow_mut(){
+                            pvc.resize_image();
+                            return true;
+                        }
+                    }
                 }
+
                 false
             }
         }
