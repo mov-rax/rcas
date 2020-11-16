@@ -48,6 +48,8 @@ fn main() {
     let mut plot_viewer = PlotViewer::new(500, 450, 500, 333, "Plot Viewer");
     let mut cas = RCas::new();
 
+    let mut last_window_size:(i32, i32) = (window.width(), window.height());
+
     //let mut controller = GUIController::new();
 
     window.make_resizable(true);
@@ -102,7 +104,15 @@ fn main() {
                 pvc.redraw();
                 false
             },
-            _ => false
+            _ => {
+                let mut win = window.borrow_mut();
+                if last_window_size != (win.width(), win.height()){ // CHECKS TO SEE IF THE APPLICATION WINDOW WAS RESIZED!
+                    last_window_size = (win.width(), win.height());
+
+                    return true;
+                }
+                false
+            }
         }
     });
 
@@ -204,10 +214,10 @@ fn main() {
             Event::Push => {
                 let click = app::event_button() == 1; // It is 1 if it is left click, 3 if it is right click
                 if click{ //LEFT CLICK
-                    if app::event_clicks(){ // DOUBLE LEFT CLICK!
+                    if app::event_clicks() && environment.get_selected() != None{ // DOUBLE LEFT CLICK!
                         let mut table = MatrixView::new("TEST TABLE");
                         table.show();
-                        table.handle2(move |oui:Table, ev:Event| match ev{
+                        table.handle(move |ev:Event| match ev{
                             Event::Push => {
                                 if app::event_clicks() { // if double clicky
                                     println!("Double clicky");
@@ -240,6 +250,10 @@ fn main() {
             _ => false
         }
     });
+
+    //let window_c = window.clone();
+    //let mut window_c = window_c.borrow_mut();
+    //window_c.handle(move |ev:Event| {false});
 
     app.run().unwrap();
 }

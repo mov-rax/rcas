@@ -201,6 +201,10 @@ impl PlotViewer{
         dummy.end();
     }
 
+    pub fn resize_image(&mut self){
+
+    }
+
     pub fn add_dummy_tab_with_text(&mut self, tab_label:&str, text:&str){
         let (x,y) = self.get_base_coords_text();
         let mut dummy = self.gen_tab(tab_label);
