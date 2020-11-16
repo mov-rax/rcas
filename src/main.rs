@@ -2,7 +2,7 @@ use std::ops::Deref;
 use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue, QueryResult};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
-use crate::rcas_gui::{Shell, EnvironmentTable, PlotViewer};
+use crate::rcas_gui::{Shell, EnvironmentTable, PlotViewer, MatrixView};
 use fltk::{*, app, app::App, text::*, window::*, group::Tabs, group::Group, frame::Frame};
 use std::time::Instant;
 use std::collections::{HashMap, HashSet};
@@ -38,7 +38,7 @@ fn main() {
     //let name_mario= String::from("Mario Vega");
 
     let app = App::default().with_scheme(app::Scheme::Gtk);
-    let mut window:Window = Window::default()
+    let mut window:DoubleWindow = DoubleWindow::default() //maybe making it a double-buffered window will help?
         .with_size(1005, 800)
         .center_screen()
         .with_label("RCAS 1.0");
@@ -204,6 +204,8 @@ fn main() {
                 let click = app::event_button() == 1; // It is 1 if it is left click, 3 if it is right click
                 if click{ //LEFT CLICK
                     if app::event_clicks(){ // DOUBLE LEFT CLICK!
+                        let mut table = MatrixView::new("TEST TABLE");
+                        table.show();
                          // TODO - IMPLEMENT EDITOR HERE
                     }
 

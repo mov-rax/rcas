@@ -1,7 +1,7 @@
 use fltk::{app, app::App, text::*, window::*, table::*};
 //use std::ops::{Deref, DerefMut};
 use crate::rcas_lib::{*, RCas, CalculationMode};
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Range};
 use fltk::browser::{BrowserScrollbar, Browser, MultiBrowser, FileBrowser};
 use fltk::group::{Tabs, Group};
 use fltk::image::{PngImage as FltkImage, SvgImage};
@@ -13,7 +13,12 @@ use fltk::dialog::{FileDialog, FileDialogType, FileDialogOptions, HelpDialog, Be
 use std::fs::File;
 use std::io::Write;
 use crate::data::BakedData;
+use std::rc::Rc;
+use std::cell::{RefCell, RefMut};
 
+const COLOR_SELECTED_FILL:u32 = 0xB7C6E0;
+const COLOR_SELECTED_BORDER:u32 = 0x0F0F0F;
+const COLOR_UNSELECTED_BORDER:u32 = 0xC0C0C0;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Shell{
@@ -302,3 +307,114 @@ impl Deref for PlotViewer{
 impl DerefMut for PlotViewer{
     fn deref_mut(&mut self) -> &mut Self::Target {&mut self.env}
 }
+
+pub struct MatrixView{
+    ranges: Rc<RefCell<Option<(Range<i32>, Range<i32>)>>>, // An optional range for (x,y)
+    table: Table
+// TODO - Make it work with a mutable reference to a matrix
+}
+
+impl MatrixView{
+    pub fn new(title:&str) -> Self{
+        let mut win = Window::default()
+            .with_size(600, 300)
+            .center_screen()
+            .with_label(title);
+        let mut table:Table = Table::new(0,0,win.width(),win.height(), "");
+        table.set_rows(50);
+        table.set_row_header(true);
+        table.set_cols(50);
+        table.set_col_header(true);
+        table.set_col_width_all(80);
+        table.set_col_resize(true);
+        table.set_color(Color::White);
+        table.end();
+        win.set_color(Color::White);
+        win.end();
+        win.make_resizable(true);
+        win.show();
+
+        Self {ranges: Rc::from(RefCell::from(None)), table}
+    }
+
+    pub fn show(&mut self){
+        let mut table = self.table.clone();
+        let wrapped = self.ranges.clone();
+        table.draw_cell2(move |table, table_context, row, col, x, y, w, h| match table_context {
+            TableContext::StartPage => fltk::draw::set_font(Font::Courier, 14),
+            TableContext::ColHeader => {
+                Self::draw_header(&((col + 65) as u8 as char).to_string(), x, y, w, h);
+            }
+            TableContext::RowHeader => Self::draw_header(&format!("{}", row+1), x, y, w, h),
+            TableContext::Cell => Self::draw_data(
+                wrapped.borrow_mut(),
+                &format!("{}", row+col),
+                x,y,w,h,
+                table.is_selected(row,col)
+            ),
+            _ => {}
+        });
+    }
+    /// Taken from fltk-rs table.rs example.
+    fn draw_header(txt: &str, x: i32, y: i32, w: i32, h: i32){
+        fltk::draw::push_clip(x,y,w,h);
+        fltk::draw::draw_box(FrameType::ThinUpBox, x, y, w, h, Color::from_u32(0xF8F8F9));
+        fltk::draw::set_draw_color(Color::Black);
+        fltk::draw::draw_text2(txt, x, y, w, h, Align::Center);
+        fltk::draw::pop_clip();
+    }
+
+    /// Taken from fltk-rs table.rs example
+    fn draw_data(mut ranges: RefMut<Option<(Range<i32>, Range<i32>)>>, txt: &str, x:i32, y:i32, w: i32, h: i32, selected:bool) {
+        fltk::draw::push_clip(x, y, w, h);
+
+        if app::event() == Event::Released{
+            *ranges = None;
+        }
+
+        if app::event() == Event::Drag {
+            if *ranges == None{
+                *ranges = Some(((x..x), (y..y))); // creating a range
+            } else {
+                let (xr, yr) = ranges.as_ref().unwrap();
+                *ranges = Some(((xr.start..x), (yr.start..y))); // extending the range :)
+            }
+            fltk::draw::set_draw_color(Color::from_u32(COLOR_SELECTED_FILL));
+        } else if let Some((xr, yr)) = ranges.as_ref(){
+            if xr.contains(&x) && yr.contains(&y){
+                fltk::draw::set_draw_color(Color::from_u32(COLOR_SELECTED_FILL));
+            } else { // if coords are not in ranges, then white it is
+                fltk::draw::set_draw_color(Color::White);
+            }
+        } else { // if ranges don't exist, then white it is
+            fltk::draw::set_draw_color(Color::White);
+        }
+        fltk::draw::draw_rectf(x, y, w, h);
+        if selected {
+            fltk::draw::set_draw_color(Color::from_u32(COLOR_SELECTED_BORDER));
+        } else {
+            fltk::draw::set_draw_color(Color::White);
+            fltk::draw::draw_rectf(x,y,w,h);
+            fltk::draw::set_draw_color(Color::from_u32(COLOR_UNSELECTED_BORDER));
+        }
+        fltk::draw::draw_rect(x, y, w, h);
+        fltk::draw::set_draw_color(Color::Black);
+        fltk::draw::draw_text2(txt, x-10, y, w, h, Align::Right);
+        fltk::draw::pop_clip();
+    }
+}
+
+impl Deref for MatrixView{
+    type Target = Table;
+
+    fn deref(&self) -> &Self::Target {
+        &self.table
+    }
+}
+
+impl DerefMut for MatrixView{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.table
+    }
+}
+

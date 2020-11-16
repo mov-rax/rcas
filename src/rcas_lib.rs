@@ -372,13 +372,12 @@ fn has_function(input:&Vec<SmartValue>) -> bool{
 }
 
 fn has_placeholder(input:&Vec<SmartValue>) -> bool{
-    let mut flag = false;
     for x in input{
         if let SmartValue::Placeholder(_) = x{
-            flag = true;
+            return true;
         }
     }
-    flag
+    false
 }
 
 fn recurse_check_paren(input:&Vec<SmartValue>, left:usize, right:usize, counter:u32) -> (usize, usize)
