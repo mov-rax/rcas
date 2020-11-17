@@ -86,10 +86,11 @@ impl RCas{
         let time = Instant::now();
         match parser(input){
             Ok(parsed) => {
+                let time = time.elapsed().as_micros();
                 let mut wrapper = Wrapper::compose(parsed);
                 wrapper.solve();
                 let result = wrapper.to_result();
-                println!("QUERY TIME:\t {} µs", time.elapsed().as_micros());
+                println!("PARSE TIME:\t {} µs", time);
                 result
             },
             Err(error) => {
@@ -617,9 +618,7 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
         Err(err) => return Err(Box::from(err))
     };
 
-    let oof = (0..10).step_by(2).map(|i|i*2).collect::<Vec<i32>>();
-
-    let mut temp:Vec<SmartValue> = Vec::new(); //temp value that will be returned
+    let mut temp:Vec<SmartValue> = Vec::with_capacity(30); //temp value that will be returned
     let mut buf:Vec<char> = Vec::new(); //buffer for number building
     let mut func_buffer:Vec<Vec<SmartValue>> = Vec::new(); //holds function parameters
     let mut counter = 0; //used to keep track of parentheses

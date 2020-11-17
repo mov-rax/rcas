@@ -29,7 +29,8 @@ pub(crate) struct Shell{
     pub(crate) mode: CalculationMode,
     pub(crate) query: String,
     history:Vec<String>,
-    history_pos:usize
+    history_pos:usize,
+    root_query_pos:u32,
 }
 
 impl Shell{
@@ -76,9 +77,10 @@ impl Shell{
             mode,
             query: String::new(),
             history: Vec::new(),
-            history_pos: 0
+            history_pos: 0,
+            root_query_pos: 0
         };
-        //shell.append(&shell.mode.to_string());
+
         shell.append_mode(&shell.mode.to_string());
         shell
     }
@@ -86,6 +88,8 @@ impl Shell{
     pub fn append_mode(&mut self, text: &str) {
         self.term.append(text);
         self.sbuf.append(&"A".repeat(text.len())); // uses the A style (the first one)
+        self.root_query_pos = self.term.text().len() as u32; // saves the position where the cursor is after printing out the mode
+        println!("CURRENT QUERY POS: {}", self.root_query_pos+1);
     }
 
     pub fn append_error(&mut self, text: &str){
@@ -93,9 +97,10 @@ impl Shell{
         self.sbuf.append(&"B".repeat(text.len())); // uses the B style (the second one)
     }
 
-    pub(crate) fn append(&mut self, text: &str) {
-        self.term.append(text);
-        self.sbuf.append(&"C".repeat(text.len()));
+    pub fn insert_normal(&mut self, text: &str) {
+        self.term.insert(text);
+        //self.term.append(text);
+        self.sbuf.insert(self.term.insert_position(), &"C".repeat(text.len()));
     }
 
     pub fn append_answer(&mut self, text: &str) {
@@ -103,12 +108,14 @@ impl Shell{
         self.sbuf.append(&"D".repeat(text.len()));
     }
 
-    pub fn pop(&mut self) {
-        let len = self.text().len() as u32;
-        self.buffer().unwrap().remove(len - 1, len); // removes last letter from buffer
-        let len = self.sbuf.text().len() as u32;
-        self.sbuf.remove(len - 1, len); // removes last letter from style buffer
-        self.query.pop();
+    /// Removes a character at the cursor
+    pub fn remove_at_cursor(&mut self) {
+        let pos:usize = self.term.insert_position() as usize;
+        let query_pos = pos-self.root_query_pos as usize;
+        self.query.remove(query_pos-1);
+        let pos:u32 = self.term.insert_position();
+        self.buffer().unwrap().remove(pos - 1, pos);
+        self.sbuf.remove(pos - 1, pos);
     }
 
     pub fn renew_query(&mut self){
@@ -136,6 +143,25 @@ impl Shell{
             return "".to_string();
         }
         self.history[self.history_pos].clone()
+    }
+
+    /// Doesn't work for some reason
+    pub fn safe_move_cursor_left(&mut self){
+        if self.term.insert_position() > self.root_query_pos{
+            let result = match self.term.move_left() {
+                Ok(()) => "SHOULD MOVE LEFT",
+                Err(_) => "CANNOT MOVE LEFT"
+            };
+            println!("{}", result);
+        }
+    }
+
+    /// Also doesn't work for some reason
+    pub fn safe_move_cursor_right(&mut self){
+        if self.term.insert_position() < self.term.text().len() as u32{
+            self.term.move_right();
+            println!("right");
+        }
     }
 
     /// Sets the Shell's calculation mode.

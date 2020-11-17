@@ -9,5 +9,8 @@ edition = "2018"
 [dependencies]
 rust_decimal = "1.7.0"
 plotters = "0.3.0"
-fltk = "0.10.9"
+fltk = "0.10.10"
 clipboard = "0.5.0"
+
+[profile.release]
+lto = true

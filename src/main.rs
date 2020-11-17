@@ -130,7 +130,7 @@ fn main() {
                 Key::Enter | Key::KPEnter => {
                     let mut pvc = pvc.borrow_mut(); // Gets a mutable reference to the PlotViewer
 
-                    shell.append("\n"); // newline character
+                    shell.insert_normal("\n"); // newline character
                     //let now = Instant::now();
                     let result = cas.query(&shell.query); // gets the result
                     //println!("QUERY DURATION: {} µs", now.elapsed().as_micros());
@@ -158,7 +158,7 @@ fn main() {
                 Key::BackSpace => { // BACKSPACE TO REMOVE CHARACTER FROM SHELL AND THE QUERY
                     if !shell.query.is_empty(){
                         //let len = shell.text().len() as u32;
-                        shell.pop();
+                        shell.remove_at_cursor();
                         //shell.buffer().unwrap().remove(len - 1, len); // removes the last character in the buffer
                         //shell.query.pop().unwrap(); // removes the last character from the query
                         true
@@ -172,7 +172,7 @@ fn main() {
                     shell.buffer().unwrap().remove(len-query_len, len);
                     shell.query.clear();
                     let text = shell.older_history();
-                    shell.append(&*text);
+                    shell.insert_normal(&*text);
                     shell.query = text;
                     true
                 },
@@ -182,8 +182,16 @@ fn main() {
                     shell.buffer().unwrap().remove(len-query_len, len);
                     shell.query.clear();
                     let text = shell.newer_history();
-                    shell.append(&*text);
+                    shell.insert_normal(&*text);
                     shell.query = text;
+                    true
+                },
+                Key::Left => {
+                    shell.safe_move_cursor_left();
+                    true
+                } ,
+                Key::Right => {
+                    shell.safe_move_cursor_right();
                     true
                 },
                 k => {
@@ -194,7 +202,7 @@ fn main() {
                         let mut cb:ClipboardContext = clipboard::ClipboardProvider::new().unwrap(); // Object that lets us get text in the clipboard :)
                         if let Ok(text) = cb.get_contents(){
                             println!("{}", &text);
-                            shell.append(&*text);
+                            shell.insert_normal(&*text);
                             shell.query.push_str(&*text);
                         }
                         return true;
@@ -205,7 +213,7 @@ fn main() {
                     }
                     // ANY OTHER KEY
                     let key = app::event_text();
-                    shell.append(&key);
+                    shell.insert_normal(&key);
                     shell.query.push_str(&key);
                     true
                 }
