@@ -575,10 +575,11 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
 
         let tinput = input.chars().filter(|x|{
             // UNICODE: 0022 -> "
-            // UNICODE: 0027 -> '
+            // UNICODE: 0027 -> ' '
             if count < 0{
                 return false;
             }
+
             if *x == '\u{0022}' || *x == '\u{0027}'{
                 flag = !flag; // flips flag
             }
@@ -615,6 +616,8 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
         Ok(val) => val,
         Err(err) => return Err(Box::from(err))
     };
+
+    let oof = (0..10).step_by(2).map(|i|i*2).collect::<Vec<i32>>();
 
     let mut temp:Vec<SmartValue> = Vec::new(); //temp value that will be returned
     let mut buf:Vec<char> = Vec::new(); //buffer for number building

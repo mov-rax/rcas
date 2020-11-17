@@ -16,6 +16,7 @@ use crate::data::BakedData;
 use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
 use std::any::Any;
+use fltk::input::{Input, FloatInput};
 
 const COLOR_SELECTED_FILL:u32 = 0xB7C6E0;
 const COLOR_SELECTED_BORDER:u32 = 0x0F0F0F;
@@ -24,6 +25,7 @@ const COLOR_UNSELECTED_BORDER:u32 = 0xC0C0C0;
 #[derive(Debug, Clone)]
 pub(crate) struct Shell{
     term: SimpleTerminal,
+    sbuf: TextBuffer,
     pub(crate) mode: CalculationMode,
     pub(crate) query: String,
     history:Vec<String>,
@@ -33,41 +35,81 @@ pub(crate) struct Shell{
 impl Shell{
     /// Creates a new shell.
     pub fn new(x:i32,y:i32,length:i32,width:i32) -> Shell {
-        let mut term:SimpleTerminal = SimpleTerminal::new(x,y, length, width, ""); // Terminal
         let mode = CalculationMode::Radian; // default is set to radian
-
-        let style = vec!{
-            StyleTableEntry{
-                color: Color::Black,
-                font: Font::Courier,
-                size: 16
+        let mut term:SimpleTerminal = SimpleTerminal::new(x,y, length, width, ""); // Terminal
+        let mut sbuf = TextBuffer::default();
+        let styles = vec![
+            StyleTableEntry { // MODE COLOR
+                color: Color::from_u32(0xEA4E95),
+                font: Font::CourierBold,
+                size: 16,
             },
-            StyleTableEntry{
-                color: Color::Blue,
-                font: Font::Courier,
-                size: 16
-            },
-            StyleTableEntry{
+            StyleTableEntry { // ERROR COLOR
                 color: Color::Red,
+                font: Font::CourierBoldItalic,
+                size: 16,
+            },
+            StyleTableEntry { // TEXT ENTRY COLOR
+                color: Color::from_u32(0x3F75EA),
+                font: Font::CourierItalic,
+                size: 16,
+            },
+            StyleTableEntry { // TEXT RESULT COLOR
+                color: Color::White,
                 font: Font::Courier,
-                size:16
+                size: 16,
             }
-        };
+        ];
 
-        term.set_highlight_data(TextBuffer::default(), style);
+        term.set_highlight_data(sbuf.clone(), styles);
+        term.set_cursor_style(TextCursor::Caret);
+        term.set_cursor_color(Color::Blue);
+        term.set_color(Color::from_u32(0x212121));
+        term.set_frame(FrameType::ShadowFrame);
+        //term.set_ansi(true);
+
+        //println!("{:?}", term.color());
 
         let mut shell = Shell {
             term,
+            sbuf,
             mode,
             query: String::new(),
             history: Vec::new(),
             history_pos: 0
         };
-        shell.append(&shell.mode.to_string());
+        //shell.append(&shell.mode.to_string());
+        shell.append_mode(&shell.mode.to_string());
         shell
     }
 
-    pub(crate) fn append(&mut self, text: &str) { self.term.append(text); }
+    pub fn append_mode(&mut self, text: &str) {
+        self.term.append(text);
+        self.sbuf.append(&"A".repeat(text.len())); // uses the A style (the first one)
+    }
+
+    pub fn append_error(&mut self, text: &str){
+        self.term.append(text);
+        self.sbuf.append(&"B".repeat(text.len())); // uses the B style (the second one)
+    }
+
+    pub(crate) fn append(&mut self, text: &str) {
+        self.term.append(text);
+        self.sbuf.append(&"C".repeat(text.len()));
+    }
+
+    pub fn append_answer(&mut self, text: &str) {
+        self.term.append(text);
+        self.sbuf.append(&"D".repeat(text.len()));
+    }
+
+    pub fn pop(&mut self) {
+        let len = self.text().len() as u32;
+        self.buffer().unwrap().remove(len - 1, len); // removes last letter from buffer
+        let len = self.sbuf.text().len() as u32;
+        self.sbuf.remove(len - 1, len); // removes last letter from style buffer
+        self.query.pop();
+    }
 
     pub fn renew_query(&mut self){
         let query_copy = self.query.clone();
@@ -125,6 +167,17 @@ impl EnvironmentTable{
     /// Adds an item onto the Environment Table with a given identifier.
     pub(crate) fn add(&mut self, id:String){
         self.env.add(&id);
+        self.lines += 1;
+    }
+
+    pub fn add_type(&mut self, id:&str, _type:&str){
+        let tabs = (0..self.env.width()).step_by(45).map(|_| '\t').collect::<String>();
+        //let separator = "\t|\t";
+        let mut string = id.to_string();
+        string.push_str(&tabs);
+        //string.push_str(separator);
+        string.push_str(_type);
+        self.env.add(&string);
         self.lines += 1;
     }
 
@@ -340,9 +393,13 @@ impl DerefMut for PlotViewer{
     fn deref_mut(&mut self) -> &mut Self::Target {&mut self.env}
 }
 
+// a = b.clone();
+// c = b.clone();
+
 pub struct MatrixView{
     ranges: Rc<RefCell<Option<(Range<i32>, Range<i32>)>>>, // An optional range for (x,y)
-    table: Table
+    table: Table,
+    input: FloatInput
 // TODO - Make it work with a mutable reference to a matrix
 }
 
@@ -353,6 +410,9 @@ impl MatrixView{
             .center_screen()
             .with_label(title);
         let mut table:Table = Table::new(0,0,win.width(),win.height(), "");
+        let mut input:FloatInput = FloatInput::new(0,0,0,0,"");
+        input.set_text_font(Font::Courier);
+        input.set_frame(FrameType::BorderFrame);
         table.set_rows(50);
         table.set_row_header(true);
         table.set_cols(50);
@@ -366,7 +426,8 @@ impl MatrixView{
         win.make_resizable(true);
         win.show();
 
-        Self {ranges: Rc::from(RefCell::from(None)), table}
+
+        Self {ranges: Rc::from(RefCell::from(None)), table, input}
     }
 
     pub fn show(&mut self){
@@ -378,12 +439,15 @@ impl MatrixView{
                 Self::draw_header(&((col + 65) as u8 as char).to_string(), x, y, w, h);
             }
             TableContext::RowHeader => Self::draw_header(&format!("{}", row+1), x, y, w, h),
-            TableContext::Cell => Self::draw_data(
-                wrapped.borrow_mut(),
-                &format!("{}", row+col),
-                x,y,w,h,
-                table.is_selected(row,col)
-            ),
+            TableContext::Cell => {
+                Self::draw_data(
+                    wrapped.borrow_mut(),
+                    &format!("{}", row + col),
+                    x, y, w, h,
+                    table.is_selected(row, col),
+                );
+
+            },
             _ => {}
         });
     }
@@ -396,7 +460,7 @@ impl MatrixView{
         fltk::draw::pop_clip();
     }
 
-    /// Taken from fltk-rs table.rs example
+
     fn draw_data(mut ranges: RefMut<Option<(Range<i32>, Range<i32>)>>, txt: &str, x:i32, y:i32, w: i32, h: i32, selected:bool) {
         fltk::draw::push_clip(x, y, w, h);
 
@@ -421,7 +485,7 @@ impl MatrixView{
         } else { // if ranges don't exist, then white it is
             fltk::draw::set_draw_color(Color::White);
         }
-        fltk::draw::draw_rectf(x, y, w, h);
+        fltk::draw::draw_rectf(x, y, w, h); //draws the filled rectangle
         if selected {
             fltk::draw::set_draw_color(Color::from_u32(COLOR_SELECTED_BORDER));
         } else {

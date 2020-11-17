@@ -17,6 +17,7 @@ use std::borrow::Borrow;
 use std::sync::Mutex;
 use fltk::app::event_key;
 use fltk::table::Table;
+use std::any::Any;
 
 mod rcas_lib;
 mod rcas_functions;
@@ -57,9 +58,9 @@ fn main() {
     window.show();
 
     //this should be removed. It is only for testing purposes
-    environment.add("ans\t\t\t\t\tMatrix".to_string());
-    environment.add("A\t\t\t\t\t4".to_string());
-    environment.add("F\t\t\t\t\tFunction".to_string());
+    environment.add_type("ans", "Matrix");
+    environment.add_type("A", "21");
+    environment.add_type("F", "Function");
     //end of testing
 
     let mut plot_viewer_clone = plot_viewer.clone();
@@ -137,7 +138,8 @@ fn main() {
                     match result{
                         QueryResult::Simple(result) => {answer = result},
                         QueryResult::Error(err) => {
-                            answer = err;
+                            shell.append_error(&err);
+                            answer = "".to_string(); // there is no answer
                             fltk::dialog::beep(fltk::dialog::BeepType::Error); // a nice beep to show that you did something wrong
                         },
                         _ => {}
@@ -147,16 +149,18 @@ fn main() {
                     pvc.redraw();
                     pvc.end();
 
-                    shell.append(&format!("{}\n{}", answer, &shell.mode.to_string())); // appends the result to the shell
+                    shell.append_answer(&format!("{}\n", answer)); // appends the result to the shell
+                    shell.append_mode(&shell.mode.to_string());
                     shell.renew_query(); // clears the current query and puts its value into history
 
                     true
                 },
                 Key::BackSpace => { // BACKSPACE TO REMOVE CHARACTER FROM SHELL AND THE QUERY
                     if !shell.query.is_empty(){
-                        let len = shell.text().len() as u32;
-                        shell.buffer().unwrap().remove(len - 1, len); // removes the last character in the buffer
-                        shell.query.pop().unwrap(); // removes the last character from the query
+                        //let len = shell.text().len() as u32;
+                        shell.pop();
+                        //shell.buffer().unwrap().remove(len - 1, len); // removes the last character in the buffer
+                        //shell.query.pop().unwrap(); // removes the last character from the query
                         true
                     } else {
                         false
@@ -221,10 +225,11 @@ fn main() {
                     if app::event_clicks() && environment.get_selected() != None{ // DOUBLE LEFT CLICK!
                         let mut table = MatrixView::new("TEST TABLE");
                         table.show();
+                        let table_c = table.clone();
                         table.handle(move |ev:Event| match ev{
                             Event::Push => {
                                 if app::event_clicks() { // if double clicky
-                                    println!("Double clicky");
+                                    // TODO - WE NEED A CONSENSUS ON IF WE ARE CREATING OUR OWN MATRIX IMPLEMENTATION OR USING A LIBRARY. CAN'T CONINUE WITHOUT IT.
                                 }
                                 true
                             },
