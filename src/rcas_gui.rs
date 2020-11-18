@@ -24,7 +24,7 @@ const COLOR_UNSELECTED_BORDER:u32 = 0xC0C0C0;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Shell{
-    term: SimpleTerminal,
+    term: TextDisplay,
     sbuf: TextBuffer,
     pub(crate) mode: CalculationMode,
     pub(crate) query: String,
@@ -33,11 +33,31 @@ pub(crate) struct Shell{
     root_query_pos:u32,
 }
 
+pub trait AsTerm {
+    fn append(&mut self, txt: &str);
+    fn text(&self) -> String;
+}
+
+impl AsTerm for TextDisplay {
+    fn append(&mut self, txt: &str) {
+        self.buffer().unwrap().append(txt);
+        self.set_insert_position(self.buffer().unwrap().length());
+        self.scroll(
+            self.count_lines(0, self.buffer().unwrap().length(), true),
+            0,
+        );
+    }
+    fn text(&self) -> String {
+        self.buffer().unwrap().text()
+    }
+}
+
 impl Shell{
     /// Creates a new shell.
     pub fn new(x:i32,y:i32,length:i32,width:i32) -> Shell {
         let mode = CalculationMode::Radian; // default is set to radian
-        let mut term:SimpleTerminal = SimpleTerminal::new(x,y, length, width, ""); // Terminal
+        let mut term = TextDisplay::new(x,y, length, width, ""); // Terminal
+        let mut buf = TextBuffer::default();
         let mut sbuf = TextBuffer::default();
         let styles = vec![
             StyleTableEntry { // MODE COLOR
@@ -61,10 +81,12 @@ impl Shell{
                 size: 16,
             }
         ];
-
+        
+        term.set_buffer(Some(buf));
         term.set_highlight_data(sbuf.clone(), styles);
         term.set_cursor_style(TextCursor::Caret);
         term.set_cursor_color(Color::Blue);
+        term.show_cursor(true);
         term.set_color(Color::from_u32(0x212121));
         term.set_frame(FrameType::ShadowFrame);
         //term.set_ansi(true);
@@ -83,6 +105,14 @@ impl Shell{
 
         shell.append_mode(&shell.mode.to_string());
         shell
+    }
+
+    pub fn text(&self) -> String {
+        self.term.text()
+    }
+
+    pub fn append(&mut self, txt: &str) {
+        self.term.append(txt)
     }
 
     pub fn append_mode(&mut self, text: &str) {
@@ -171,7 +201,7 @@ impl Shell{
 }
 
 impl Deref for Shell{
-    type Target = SimpleTerminal;
+    type Target = TextDisplay;
     fn deref(&self) -> &Self::Target {&self.term}
 }
 
