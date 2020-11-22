@@ -91,11 +91,13 @@ impl RCas{
     pub fn query(&self, input:&str) -> QueryResult{
         let time = Instant::now();
         for i in 0..input.len(){
-            if is_func(input.clone(), 0, false , String::new()){
+            if is_func(input.clone(), i, false , String::new()){
                 let mod_str:String = input.to_string().chars().filter(|x| !x.is_whitespace()).map(|x| x.to_string()).collect();
                 let result = func_solve(rearrange(mod_str.as_str()).as_str(),0.0).to_string();
                 return QueryResult::Simple(result);
                 break;
+            }else{
+                println!("false");
             }
         }
         match parser(input){
@@ -874,6 +876,7 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
 }
 
 pub fn is_func(input: &str, ind: usize, res: bool, str_res: String) -> bool{
+    println!("String: {}", str_res);
     if str_res.len() > 4{
         return false
     }
