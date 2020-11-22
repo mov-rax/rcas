@@ -96,8 +96,6 @@ impl RCas{
                 let result = func_solve(rearrange(mod_str.as_str()).as_str(),0.0).to_string();
                 return QueryResult::Simple(result);
                 break;
-            }else{
-                println!("false");
             }
         }
         match parser(input){
@@ -876,7 +874,6 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
 }
 
 pub fn is_func(input: &str, ind: usize, res: bool, str_res: String) -> bool{
-    println!("String: {}", str_res);
     if str_res.len() > 4{
         return false
     }
@@ -1032,9 +1029,10 @@ pub fn rearrange(input: &str) -> String{
             new.insert(i+1, '*');
         }else if (PARE2.contains(new.chars().nth(i).unwrap()) && (SYM.contains(new.chars().nth(i+1).unwrap()) || NUM.contains(new.chars().nth(i+1).unwrap())) ) {
             new.insert(i+1, '*');
-        }else if((NUM.contains(new.chars().nth(i+1).unwrap())) && (PARE1.contains(new.chars().nth(i+1).unwrap()) || SYM.contains(new.chars().nth(i+1).unwrap()))){
+        }else if((NUM.contains(new.chars().nth(i).unwrap())) && (PARE1.contains(new.chars().nth(i+1).unwrap()) || SYM.contains(new.chars().nth(i+1).unwrap()))){
             new.insert(i+1, '*');
         }
     }
+    println!("new: {}", new);
     return new
 }
