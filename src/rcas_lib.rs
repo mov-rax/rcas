@@ -12,6 +12,10 @@ use crate::rcas_functions::SmartFunction;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::time::Instant;
+use eval::{Expr, to_value};
+extern crate evalexpr;
+use evalexpr::*;
+use std::fmt::Debug;
 
 //constants
 const ADD:char = '+'; //addition
@@ -24,10 +28,12 @@ const FNC:char = 'ƒ'; //pre-defined (constant) function
 const FNV:char = '⭒'; //variable function
 const VAR:char = '⭑'; //variable
 const PAR:char = '⮂'; //parameters
-//static STDFUNC:[&str; 4] = ["sin", "cos", "tan", "sec"]; //standard functions
+static STDFUNC:[&str; 14] = ["sin", "cos", "tan", "sec", "csc", "cot", "cosh", "sinh", "tanh", "acos", "asin", "atan", "log", "ln"]; //standard functions
 static SYM:&str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"; //allowed symbols
 static NUM:&str = "1234567890."; //allowed numbers
 static OPR:&str = "+-*/"; //allowed operators
+static PARE1:&str = "(";
+static PARE2:&str = ")";
 
 //Errors
 
@@ -84,6 +90,14 @@ impl RCas{
 
     pub fn query(&self, input:&str) -> QueryResult{
         let time = Instant::now();
+        for i in 0..input.len(){
+            if is_func(input.clone(), 0, false , String::new()){
+                let mod_str:String = input.to_string().chars().filter(|x| !x.is_whitespace()).map(|x| x.to_string()).collect();
+                let result = func_solve(rearrange(mod_str.as_str()).as_str(),0.0).to_string();
+                return QueryResult::Simple(result);
+                break;
+            }
+        }
         match parser(input){
             Ok(parsed) => {
                 let time = time.elapsed().as_micros();
@@ -857,4 +871,167 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
 
 
     Ok(temp) //sends back the parsed information.
+}
+
+pub fn is_func(input: &str, ind: usize, res: bool, str_res: String) -> bool{
+    if str_res.len() > 4{
+        return false
+    }
+    if ind >= input.len()-1{
+        return res
+    }
+    if STDFUNC.contains(&str_res.as_str()){
+        return true
+    }
+    return is_func(input, ind + 1, res, str_res + input.chars().nth(ind).unwrap().to_string().as_str())
+}
+
+pub fn func_solve(input: &str,  x: f32) -> f64{
+    let context = context_map! {
+        "x" => x as f64,
+        "e" => 2.718281828459045,
+        "pi" => 3.141516,
+        "cos" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.cos()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).cos()))
+            }else{
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "sin" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.sin()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).sin()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "tan" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.tan()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).tan()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "sec" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(1.0/float.cos()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float(1.0/(int as f64).cos()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "csc" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(1.0/float.sin()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float(1.0/(int as f64).sin()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "cot" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(1.0/float.tan()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float(1.0/(int as f64).tan()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "acos" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.acos()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).acos()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "asin" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.asin()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).asin()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "atan" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.atan()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).atan()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "cosh" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.cosh()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).cosh()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "sinh" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.sinh()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).sinh()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "tanh" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.tanh()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).tanh()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "log" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.log10()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).log10()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "ln" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.ln()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).ln()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+    }.unwrap();
+    let mut result = evalexpr::eval_with_context(input.clone(), &context).unwrap().as_number().unwrap();
+    return result
+}
+
+pub fn rearrange(input: &str) -> String{
+    let mut new: String= input.to_string();
+    for i in 0..new.len()-1{
+        if(PARE2.contains(new.chars().nth(i).unwrap()) && PARE1.contains(new.chars().nth(i+1).unwrap())){
+            new.insert(i+1, '*');
+        }else if (PARE2.contains(new.chars().nth(i).unwrap()) && (SYM.contains(new.chars().nth(i+1).unwrap()) || NUM.contains(new.chars().nth(i+1).unwrap())) ) {
+            new.insert(i+1, '*');
+        }else if((NUM.contains(new.chars().nth(i+1).unwrap())) && (PARE1.contains(new.chars().nth(i+1).unwrap()) || SYM.contains(new.chars().nth(i+1).unwrap()))){
+            new.insert(i+1, '*');
+        }
+    }
+    return new
 }
