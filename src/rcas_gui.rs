@@ -305,7 +305,19 @@ impl PlotViewer{
 
     pub fn add_test_img_tab(&mut self, label:&str, arg:&str){
         let f_svg = rcas_lib::f_query(arg);
-        let mut thedata = f_svg.evcxr_display();
+        let mut thedata = f_svg.evcxr_display(); /*edit the source for evcxr display in order to get it working*/
+        /*replace the evcxr_display() function on the source with this:
+
+        pub fn evcxr_display(&self) -> &str{
+	        let svg = self.0.as_str();
+            svg
+        }
+
+        I think you do cargo update once you modify the source, but I'm not sure
+
+        It worked fine for me when I did it on manjaro, but I tried it on a different OS and it was giving me trouble.
+        Maybe you can revert it back to the previous version?
+        */
         let (x, y) = self.get_base_coords_image();
         let mut dummy = self.gen_tab(label);
         let mut img = fltk::image::SvgImage::from_data(thedata).unwrap();
