@@ -132,7 +132,8 @@ fn main() {
 
                     shell.insert_normal("\n"); // newline character
                     //let now = Instant::now();
-                    let result = cas.query(&shell.query); // gets the result
+                    let arg = &shell.clone().query;
+                    let result = cas.query(arg); // gets the result
                     //println!("QUERY DURATION: {} µs", now.elapsed().as_micros());
                     let mut answer = String::new();
                     match result{
@@ -145,7 +146,7 @@ fn main() {
                         _ => {}
                     }
                     pvc.begin();
-                    pvc.add_test_img_tab("OOGA"); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
+                    pvc.add_test_img_tab("OOGA", arg); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
                     pvc.redraw();
                     pvc.end();
 

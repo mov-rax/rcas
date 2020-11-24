@@ -16,6 +16,12 @@ use eval::{Expr, to_value};
 extern crate evalexpr;
 use evalexpr::*;
 use std::fmt::Debug;
+extern crate plotters;
+use plotters::prelude::*;
+use plotters::series::*;
+use plotters::evcxr::SVGWrapper;
+use fltk::Color::Gray0;
+
 
 //constants
 const ADD:char = '+'; //addition
@@ -34,6 +40,7 @@ static NUM:&str = "1234567890."; //allowed numbers
 static OPR:&str = "+-*/"; //allowed operators
 static PARE1:&str = "(";
 static PARE2:&str = ")";
+static fncs: &str = "xX";
 
 //Errors
 
@@ -91,7 +98,7 @@ impl RCas{
     pub fn query(&self, input:&str) -> QueryResult{
         let time = Instant::now();
         for i in 0..input.len(){
-            if is_func(input.clone(), i, false , String::new()){
+            if is_func(input.clone(), i, false , String::new()) || fncs.contains(input.to_string().chars().nth(i).unwrap()){
                 let mod_str:String = input.to_string().chars().filter(|x| !x.is_whitespace()).map(|x| x.to_string()).collect();
                 let result = func_solve(rearrange(mod_str.as_str()).as_str(),0.0).to_string();
                 return QueryResult::Simple(result);
@@ -151,6 +158,7 @@ pub enum QueryResult{
     Assign(QueryAssign), // Query result that assigns a value to a variable or function identifier
     Image(QueryImage), // Query result that returns an Image
     Execute(Command), // Query result that requires the GUI to execute
+    SVGWRAPPER(SVGWrapper),
     Error(String) // Returned in case of parsing or function error
 }
 /// Commands that interface with the GUI.
@@ -889,6 +897,7 @@ pub fn is_func(input: &str, ind: usize, res: bool, str_res: String) -> bool{
 pub fn func_solve(input: &str,  x: f32) -> f64{
     let context = context_map! {
         "x" => x as f64,
+        "X" => x as f64,
         "e" => 2.718281828459045,
         "pi" => 3.141516,
         "cos" => Function::new(Box::new(|argument|{
@@ -1019,20 +1028,201 @@ pub fn func_solve(input: &str,  x: f32) -> f64{
         })),
     }.unwrap();
     let mut result = evalexpr::eval_with_context(input.clone(), &context).unwrap().as_number().unwrap();
+
+
+
     return result
 }
 
 pub fn rearrange(input: &str) -> String{
     let mut new: String= input.to_string();
-    for i in 0..new.len()-1{
+    let mut i = 0;
+    while i < new.len()-1{
         if(PARE2.contains(new.chars().nth(i).unwrap()) && PARE1.contains(new.chars().nth(i+1).unwrap())){
             new.insert(i+1, '*');
         }else if (PARE2.contains(new.chars().nth(i).unwrap()) && (SYM.contains(new.chars().nth(i+1).unwrap()) || NUM.contains(new.chars().nth(i+1).unwrap())) ) {
             new.insert(i+1, '*');
-        }else if((NUM.contains(new.chars().nth(i).unwrap())) && (PARE1.contains(new.chars().nth(i+1).unwrap()) || SYM.contains(new.chars().nth(i+1).unwrap()))){
+        }else if((NUM.contains(new.chars().nth(i).unwrap()) || fncs.contains(new.chars().nth(i).unwrap())) && (PARE1.contains(new.chars().nth(i+1).unwrap()) || SYM.contains(new.chars().nth(i+1).unwrap()))){
             new.insert(i+1, '*');
         }
+        i+=1;
     }
     println!("new: {}", new);
     return new
+}
+
+pub fn func_solve_for_plotter(input: &str,  x: f32) -> (f32, f32){
+    let context = context_map! {
+        "x" => x as f64,
+        "X" => x as f64,
+        "e" => 2.718281828459045,
+        "pi" => 3.141516,
+        "cos" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.cos()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).cos()))
+            }else{
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "sin" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.sin()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).sin()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "tan" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.tan()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).tan()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "sec" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(1.0/float.cos()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float(1.0/(int as f64).cos()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "csc" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(1.0/float.sin()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float(1.0/(int as f64).sin()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "cot" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(1.0/float.tan()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float(1.0/(int as f64).tan()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "acos" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.acos()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).acos()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "asin" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.asin()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).asin()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "atan" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.atan()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).atan()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "cosh" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.cosh()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).cosh()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "sinh" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.sinh()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).sinh()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "tanh" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.tanh()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).tanh()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "log" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.log10()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).log10()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+        "ln" => Function::new(Box::new(|argument|{
+            if let Ok(float) = argument.as_float(){
+                Ok(Value::Float(float.ln()))
+            }else if let Ok(int) = argument.as_int(){
+                Ok(Value::Float((int as f64).ln()))
+            }else {
+            Err(EvalexprError::expected_number(argument.clone()))
+            }
+        })),
+    }.unwrap();
+    let mut result = evalexpr::eval_with_context(input.clone(), &context).unwrap().as_number().unwrap();
+
+
+
+    return (x, result as f32)
+}
+
+pub fn plotter(input: &str) -> SVGWrapper{
+    let figure = evcxr_figure((320, 240), |root| {
+        root.fill(&WHITE);
+        let mut chart = ChartBuilder::on(&root)
+            .caption(("y = ".to_string() + &input.clone()).as_str(), ("Arial", 35).into_font())
+            .margin(5)
+            .x_label_area_size(30)
+            .y_label_area_size(30)
+            .build_ranged(-2f32..2f32, -5f32..5f32)?;
+
+        chart.configure_mesh().draw()?;
+
+        chart.draw_series(LineSeries::new(
+            (-100..=100).map(|x| x as f32 / 50.0).map(|x| func_solve_for_plotter(input.clone(), x)),
+            &BLUE,
+        )).unwrap()
+            //.label(("y = ".to_string() + &input.clone()).as_str())
+            // .legend(|(x,y)| PathElement::new(vec![(x,y), (x + 20,y)], &RED))
+            ;
+
+        chart.configure_series_labels()
+            .background_style(&WHITE.mix(0.8))
+            .border_style(&BLACK)
+            .draw()?;
+        Ok(())
+    });
+    figure
+}
+
+pub fn f_query(input:&str) -> SVGWrapper{
+    let mod_str:String = input.to_string().chars().filter(|x| !x.is_whitespace()).map(|x| x.to_string()).collect();
+    let result = rearrange(mod_str.as_str());
+    println!("{:?}", result);
+    return plotter(result.clone().as_str())
 }

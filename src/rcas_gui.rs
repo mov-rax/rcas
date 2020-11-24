@@ -1,5 +1,6 @@
 use fltk::{app, app::App, text::*, window::*, table::*};
 //use std::ops::{Deref, DerefMut};
+use crate::rcas_lib;
 use crate::rcas_lib::{*, RCas, CalculationMode};
 use std::ops::{Deref, DerefMut, Range};
 use fltk::browser::{BrowserScrollbar, Browser, MultiBrowser, FileBrowser};
@@ -10,13 +11,18 @@ use std::collections::HashMap;
 //use fltk_sys::widget::Fl_Widget;
 use fltk::menu::MenuItem;
 use fltk::dialog::{FileDialog, FileDialogType, FileDialogOptions, HelpDialog, BeepType};
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::Write;
+extern crate plotters;
+//use plotters::prelude::*;
+use plotters::series::*;
+use plotters::evcxr::SVGWrapper;
 use crate::data::BakedData;
 use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
 use std::any::Any;
 use fltk::input::{Input, FloatInput};
+use std::convert::TryInto;
 
 const COLOR_SELECTED_FILL:u32 = 0xB7C6E0;
 const COLOR_SELECTED_BORDER:u32 = 0x0F0F0F;
@@ -297,10 +303,12 @@ impl PlotViewer{
         dummy.end();
     }
 
-    pub fn add_test_img_tab(&mut self, label:&str){
+    pub fn add_test_img_tab(&mut self, label:&str, arg:&str){
+        let f_svg = rcas_lib::f_query(arg);
+        let mut thedata = f_svg.evcxr_display();
         let (x, y) = self.get_base_coords_image();
         let mut dummy = self.gen_tab(label);
-        let mut img = fltk::image::SvgImage::from_data(BakedData::get_test_svg()).unwrap();
+        let mut img = fltk::image::SvgImage::from_data(thedata).unwrap();
         //let mut img = fltk::image::PngImage::from_data(&BakedData::get_test_png()).unwrap();
         img.scale(dummy.width(), ((dummy.height() as f32)*0.93).round() as i32, true, true);
         self.img_locations.insert(String::from(label), (dummy.x(), dummy.y(), dummy.width(), ((dummy.height() as f32)*0.93).round() as i32));
