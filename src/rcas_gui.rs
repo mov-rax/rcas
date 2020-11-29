@@ -119,7 +119,6 @@ impl Shell{
         self.term.append(text);
         self.sbuf.append(&"A".repeat(text.len())); // uses the A style (the first one)
         self.root_query_pos = self.term.text().len() as u32; // saves the position where the cursor is after printing out the mode
-        println!("CURRENT QUERY POS: {}", self.root_query_pos+1);
     }
 
     pub fn append_error(&mut self, text: &str){
@@ -263,8 +262,6 @@ impl EnvironmentTable{
         }
         None
     }
-
-
 }
 
 impl Deref for EnvironmentTable{
@@ -390,6 +387,7 @@ impl PlotViewer{
                             println!("FILENAME:\t{:?}", dialog.filenames());
                             let path = dialog.filename().to_string_lossy().to_string();
 
+                            // TODO - THE BACKEND NEEDS TO BE FLESHED OUT FIRST. THIS CANNOT BE FINISHED MADE UNTIL THEN.
                             // let mut opt = usvg::Options::default();
                             // opt.path = Some(dialog.filename().clone());
                             // opt.fontdb.load_system_fonts();

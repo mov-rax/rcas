@@ -254,7 +254,7 @@ fn main() {
                     let (x, y) = app::event_coords(); // gets the coordinates of the click
                     if let Some(row) = environment.get_selected(){ //gets the selected row
                         if let Some(choice) = item.popup(x,y){ //tooltip pops up and the choice selected gets recieved
-                            //TODO - IMPLEMENT EDIT AND REMOVE
+                            //TODO - IMPLEMENT EDIT
                             match &*choice.label().unwrap(){
                                 "Remove" => environment.remove_row(row),
                                 _ => println!("NOT IMPLEMENTED YET")
