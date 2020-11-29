@@ -1,5 +1,5 @@
 use std::ops::Deref;
-use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue, QueryResult};
+use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue, QueryResult, Command};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
 use crate::rcas_gui::{Shell, EnvironmentTable, PlotViewer, MatrixView};
@@ -130,27 +130,38 @@ fn main() {
                 Key::Enter | Key::KPEnter => {
                     let mut pvc = pvc.borrow_mut(); // Gets a mutable reference to the PlotViewer
 
-                    shell.insert_normal("\n"); // newline character
+
                     //let now = Instant::now();
                     let result = cas.query(&shell.query); // gets the result
                     //println!("QUERY DURATION: {} µs", now.elapsed().as_micros());
+
                     let mut answer = String::new();
                     match result{
-                        QueryResult::Simple(result) => {answer = result},
+                        QueryResult::Simple(result) => {
+                            answer = result;
+                        },
                         QueryResult::Error(err) => {
                             shell.append_error(&err);
                             answer = "".to_string(); // there is no answer
                             fltk::dialog::beep(fltk::dialog::BeepType::Error); // a nice beep to show that you did something wrong
+                            //shell.insert_normal("\n"); // newline character
                         },
+                        QueryResult::Execute(cmd) => { // Execute commands here
+                            match cmd{
+                                Command::ClearScreen => shell.clear(),
+                                _ => {}
+                            }
+                        }
                         _ => {}
                     }
                     pvc.begin();
                     pvc.add_test_img_tab("OOGA"); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
                     pvc.redraw();
                     pvc.end();
-
-                    shell.append_answer(&format!("{}\n", answer)); // appends the result to the shell
-                    shell.append_mode(&shell.mode.to_string());
+                    if answer.len() != 0{
+                        shell.append_answer(&format!("{}\n", answer)); // appends the result to the shell
+                    }
+                    shell.append_mode();
                     shell.renew_query(); // clears the current query and puts its value into history
 
                     true

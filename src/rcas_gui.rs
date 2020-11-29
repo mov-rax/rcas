@@ -103,7 +103,7 @@ impl Shell{
             root_query_pos: 0
         };
 
-        shell.append_mode(&shell.mode.to_string());
+        shell.append_mode();
         shell
     }
 
@@ -115,15 +115,17 @@ impl Shell{
         self.term.append(txt)
     }
 
-    pub fn append_mode(&mut self, text: &str) {
-        self.term.append(text);
-        self.sbuf.append(&"A".repeat(text.len())); // uses the A style (the first one)
+    pub fn append_mode(&mut self) {
+        self.term.append(&self.mode.to_string());
+        self.sbuf.append(&"A".repeat(self.mode.to_string().len())); // uses the A style (the first one)
         self.root_query_pos = self.term.text().len() as u32; // saves the position where the cursor is after printing out the mode
     }
 
     pub fn append_error(&mut self, text: &str){
+        self.term.append("\n");
         self.term.append(text);
-        self.sbuf.append(&"B".repeat(text.len())); // uses the B style (the second one)
+        self.term.append("\n");
+        self.sbuf.append(&"B".repeat(text.len()+2)); // uses the B style (the second one)
     }
 
     pub fn insert_normal(&mut self, text: &str) {
@@ -133,8 +135,9 @@ impl Shell{
     }
 
     pub fn append_answer(&mut self, text: &str) {
+        self.term.append("\n");
         self.term.append(text);
-        self.sbuf.append(&"D".repeat(text.len()));
+        self.sbuf.append(&"D".repeat(text.len()+1));
     }
 
     /// Removes a character at the cursor
@@ -196,6 +199,11 @@ impl Shell{
     /// Sets the Shell's calculation mode.
     pub fn set_calculation_mode(&mut self, mode:CalculationMode) {
         self.mode = mode;
+    }
+
+    pub fn clear(&mut self){
+        self.buffer().unwrap().set_text(""); //clears the shell
+        self.sbuf.set_text(""); // clears the style buffer
     }
 }
 

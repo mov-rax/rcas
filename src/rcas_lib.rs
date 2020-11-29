@@ -8,11 +8,10 @@ use rust_decimal::prelude::ToPrimitive;
 use std::ptr::replace;
 use std::ops::Deref;
 use crate::rcas_functions;
-use crate::rcas_functions::SmartFunction;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::time::Instant;
-use std::fmt::{Display, Debug};
+use std::fmt::{Display, Debug, Formatter};
 
 //constants
 const ADD:char = '+'; //addition
@@ -20,12 +19,13 @@ const SUB:char = '-'; //subtraction
 const MUL:char = '*'; //multiplication
 const DIV:char = '/'; //division
 const MOD:char = '%'; //modulo
+const POW:char = '^'; //power
+const FAC:char = '!'; //factorial
 const PHD:char = '█'; //placeholder
 const FNC:char = 'ƒ'; //pre-defined (constant) function
 const FNV:char = '⭒'; //variable function
 const VAR:char = '⭑'; //variable
 const PAR:char = '⮂'; //parameters
-//static STDFUNC:[&str; 4] = ["sin", "cos", "tan", "sec"]; //standard functions
 static SYM:&str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"; //allowed symbols
 static NUM:&str = "1234567890."; //allowed numbers
 static OPR:&str = "+-*/"; //allowed operators
@@ -47,6 +47,42 @@ struct GenericError;
 struct UnknownIdentifierError{
     position:u32,
     identifier:String,
+}
+#[derive(Debug,Clone,PartialEq)]
+pub struct TypeMismatchError;
+
+#[derive(Debug,Clone,PartialEq)]
+pub struct NegativeNumberError;
+
+#[derive(Debug,Clone,PartialEq)]
+pub struct DivideByZeroError;
+
+#[derive(Debug,Clone,PartialEq)]
+pub struct IncorrectNumberOfArgumentsError<'a>{
+    pub name: &'a str,
+    pub found: usize,
+    pub requires: usize,
+}
+
+#[derive(Debug,Clone,PartialEq)]
+pub struct OverflowError;
+
+impl fmt::Display for OverflowError{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "OVERFLOW ERROR.")
+    }
+}
+
+impl<'a> fmt::Display for IncorrectNumberOfArgumentsError<'a>{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f,"INCORRECT NUMBER OF ARGUMENTS IN FUNCTION '{}'.\nFOUND {} ARGUMENTS.\nREQUIRES {} ARGUMENTS.", self.name, self.found, self.requires)
+    }
+}
+
+impl fmt::Display for TypeMismatchError{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "TYPE MISMATCH ERROR.")
+    }
 }
 
 impl fmt::Display for ParenthesesError{
@@ -70,11 +106,28 @@ impl fmt::Display for UnknownIdentifierError{
     }
 }
 
+impl fmt::Display for NegativeNumberError{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "NEGATIVE NUMBER ERROR")
+    }
+}
+
+impl fmt::Display for DivideByZeroError{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "DIVIDE BY ZERO ERROR")
+    }
+}
+
 
 impl error::Error for ParenthesesError{}
 impl error::Error for FormattingError{}
 impl error::Error for GenericError{}
 impl error::Error for UnknownIdentifierError{}
+impl error::Error for TypeMismatchError{}
+impl error::Error for NegativeNumberError{}
+impl error::Error for DivideByZeroError{}
+impl<'a> error::Error for IncorrectNumberOfArgumentsError<'a>{}
+impl error::Error for OverflowError{}
 
 pub struct RCas{}
 
@@ -208,10 +261,13 @@ impl Wrapper{
 
     pub fn to_result(&self) -> QueryResult{
         if self.values.len() == 1{
-            if let SmartValue::Error(err) = &self.values[0]{
-                return QueryResult::Error(err.clone())
-            }
-            return QueryResult::Simple(self.to_string())
+
+            return match &self.values[0]{
+                SmartValue::Error(err) => QueryResult::Error(err.clone()),
+                SmartValue::Cmd(cmd) => QueryResult::Execute(cmd.clone()),
+                _ => QueryResult::Simple(self.to_string()),
+            };
+
         } else if self.values.len() == 0{
             return QueryResult::Simple("".to_string())
         }
@@ -223,19 +279,15 @@ impl Wrapper{
 #[derive(Debug, PartialEq, Clone)]
 pub enum SmartValue{
     Operator(char),
-    Function(String), //holds the user-defined function identifier
-    DedicatedFunction(String), //holds the function identifier
-    Parameters(SmartParameter), //holds parameters of functions
+    Function(String), //holds a function identifier
     Number(Decimal),
     LParen,
     RParen,
-    LFuncBound, //separate types of parentheses are used to identify parentheses that contain expressions and those that do not.
-    RFuncBound,
-    Variable(String), //variable does not require ( ), therefore there exists Function and Variable
+    //Variable(String), //variable does not require ( ), therefore there exists Function and Variable
     Placeholder(Vec<SmartValue>),
     Range(Decimal,Decimal,Decimal), // Lower, Step, Upper
     Label(String,Vec<SmartValue>), // A label can contains an identifier and a possible expression.
-    Comma,
+    Comma, // A special character used to separate parameters
     Assign, // A special equals = operator. It is used to show that a value is being assigned to an identifier.
     Error(String), // An error returned from a function call. The Stringified version of the error is returned.
     Cmd(Command), // A command that is returned from a function call. May exist when solving
@@ -247,7 +299,6 @@ impl SmartValue{
         match self{
             SmartValue::Operator(x) => buf.push(*x),
             SmartValue::Function(_) => buf.push(FNC),
-            SmartValue::DedicatedFunction(x) => buf.push(FNC),
             SmartValue::Number(x) => {
                 let num = format!("{}", x);
                 for sus in num.chars(){
@@ -258,71 +309,13 @@ impl SmartValue{
             SmartValue::LParen => buf.push('('),
             SmartValue::RParen => buf.push(')'),
             SmartValue::Placeholder(_) => buf.push(PHD),
-            SmartValue::Variable(_) => buf.push(VAR),
-            SmartValue::Parameters(_) => buf.push(PAR),
-            SmartValue::LFuncBound => buf.push('|'),
-            SmartValue::RFuncBound => buf.push('|'),
+            //SmartValue::Variable(_) => buf.push(VAR),
             _ => buf.push('?')
         }
         buf
     }
 }
 
-/// Contains data of all passed-through parameters.
-/// Each parameter is stored as a Wrapper.
-#[derive(Debug, PartialEq, Clone)]
-pub struct SmartParameter{
-    params:Vec<Decimal>
-}
-
-impl SmartParameter{
-    /// Takes in param1, param2, param2, ... , and converts it into
-    /// a specialized datatype that can easily transverse parameters
-    pub fn from_str(input:&str) -> Self{
-        let magic:Vec<&str> = input.split(',').collect();
-        let mut values:Vec<Decimal> = Vec::new();
-        for x in magic{
-            // this does a LOT of stuff. It parses and solves each entry.
-            if let Ok(value) = parser(x){
-                if let SmartValue::Number(num) = recurse_solve(value.clone())[0].clone(){
-                    values.push(num);
-                }
-            }
-        }
-        Self {params: values}
-    }
-
-    pub fn new() -> Self{
-        Self{params:Vec::new()}
-    }
-    ///Will try to solve and insert the result as a parameter
-    pub fn push(&mut self, input:Vec<SmartValue>){
-        if let SmartValue::Number(number) = recurse_solve(input)[0].clone(){
-            self.params.push(number);
-        }
-    }
-    /// Returns true if the number of parameters given conforms with the type of function
-    /// associated with the given identifier.
-    pub fn test_params_conformance(&self, identifier:&str) -> bool{
-        let func = rcas_functions::SmartFunction::get(identifier);
-        println!("{}", self.params.len());
-        match func{
-            SmartFunction::Mono(_) => { self.params.len() == 1},
-            SmartFunction::Binary(_) => {self.params.len() == 2},
-            SmartFunction::Poly(_) => {self.params.len() >= 1},
-            SmartFunction::PolyPoly(_) => {self.params.len() >= 1},
-            SmartFunction::MonoOpt(_) => {self.params.len() == 1},
-            SmartFunction::BinaryOpt(_) => {self.params.len() == 2},
-            SmartFunction::PolyOpt(_) => {self.params.len() >= 1},
-            SmartFunction::PolyPolyOpt(_) => {self.params.len() >= 1},
-            _ => {false}
-        }
-    }
-}
-
-pub struct Params{
-    params:Vec<Vec<SmartValue>>
-}
 
 #[derive(Debug,Clone)]
 pub enum CalculationMode{
@@ -353,13 +346,15 @@ fn recurse_solve(mut input:Vec<SmartValue>) -> Vec<SmartValue>{
             if let Some(SmartValue::Placeholder(holder)) = input.get(x) {
                 //print_sv_vec(&holder);
                 let solved = recurse_solve(holder.clone());
-                if solved.len() == 0 { // if the solve returned NOTHING, then the entire result must also be nothing.
+                if let Some(SmartValue::Function(_)) = input.get(x-1){
+                    //NOTHING HERE.
+                } else if solved.len() == 0 { // if the solve returned NOTHING, and there is no function before this placeholder, then the entire answer must be nothing.
                     return Vec::new()
                 }
                 // a nice way to get the resolved value. If the previous value is a not function, then it is just a Number.
                 // Otherwise, it is probably parameters to a function, and as such should be in
                 // A placeholder.
-                let value = if let Some(SmartValue::Function(_)) = input.get(x-1){ // if previous was a function
+                let value = if let Some(SmartValue::Function(_)) = input.get(x-1){ // if previous was a function, then put the solution in a placeholder.
                     SmartValue::Placeholder(solved)
                 } else {
                    solved[0].clone()
@@ -489,7 +484,7 @@ pub fn composer(mut input: Vec<SmartValue>) -> Vec<SmartValue>{
             for _ in parentheses_locations.0 ..parentheses_locations.1{
                 input.remove(parentheses_locations.0);
             }
-            //let placeholder = handle.join().unwrap();
+
             if parentheses_locations.0 == input.len(){
                 input.push(placeholder)
             } else{
@@ -594,6 +589,8 @@ pub fn calculate(input: &mut Vec<SmartValue>){
                             }
                         }
                     }
+                } else {
+
                 }
             }
             count += 1;
@@ -618,6 +615,11 @@ pub fn calculate(input: &mut Vec<SmartValue>){
                             input.remove(count + 1);
                             input.remove(count - 1);
                         } else{
+                            if *right == Decimal::from(0){ // check divide by zero
+                                input.clear();
+                                input.push(SmartValue::Error(DivideByZeroError.to_string()));
+                                return;
+                            }
                             let replacement = *left / *right;
                             input[count] = SmartValue::Number(replacement);
                             input.remove(count + 1);
@@ -934,7 +936,7 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
                 if x == '(' || NUM.contains(x) || OPR.contains(x){ //next nth is (, or a number, or an operator
                     //TODO: Add variable and custom function identification
                     let foo = &buf.iter().collect::<String>();
-                    if rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()) || rcas_functions::VOID_FUNCTIONS.contains(&foo.as_str()){
+                    if rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()){
                         temp.push(SmartValue::Function(foo.clone()));
                         //temp.push(SmartValue::DedicatedFunction(foo.clone()));
                        // function_name = foo.clone();
@@ -942,18 +944,6 @@ pub fn parser(input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
                         buf.clear();
                         continue
                     }
-
-                    // if rcas_functions::VOID_FUNCTIONS.contains(&foo.as_str()){ //a function that does NOT return a value to the shell.
-                    //     if x == '('{
-                    //         temp.push(SmartValue::NamedFunction(foo.clone(), Vec::new()));
-                    //         function_name = foo.clone();
-                    //         function = true;
-                    //         //is_void = true;
-                    //     }
-                    //
-                    //     buf.clear();
-                    //     continue
-                    // }
 
                     //temp.push(SmartValue::Operator('*')); //multiplication is inferred if it is a variable
                     //TODO: This if statement should also include variable and function
