@@ -9,9 +9,12 @@ use std::error::Error;
 use std::fmt;
 use statrs;
 use crate::rcas_lib::{SmartValue, FormattingError, TypeMismatchError, IncorrectNumberOfArgumentsError, Command, NegativeNumberError, OverflowError};
+use std::ops::Div;
+use crate::rcas_lib::DataType::Number;
 
 ///Shows to the world all of the standard functions given by default.
-pub static STANDARD_FUNCTIONS:[&str;15] = ["cos", "sin", "tan", "sec", "csc", "cot", "mod", "plot", "sum", "exp", "factorial", "sqrt", "clear", "^", "!"];
+pub static STANDARD_FUNCTIONS:[&str;28] = ["cos", "sin", "tan", "sec", "csc", "cot", "mod", "plot", "sum", "exp", "factorial", "sqrt", "clear", "^", "!", "cosh",
+                                            "sinh", "tanh", "acos", "asin", "atan", "log", "ln", "mul", "max", "min", "avg", "stdev"];
 
 pub enum Function{
     Standard(Box<dyn Fn(Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>>),
@@ -29,11 +32,24 @@ impl Function {
             "cot" => Self::Standard(Box::new(cot_f)),
             "mod" => Self::Standard(Box::new(mod_f)),
             "sum" => Self::Standard(Box::new(sum_f)),
+            "mul" => Self::Standard(Box::new(mul_f)),
             "exp" => Self::Standard(Box::new(exp_f)),
             "^" => Self::Standard(Box::new(exp_f)),
             "factorial" => Self::Standard(Box::new(factorial_f)),
             "!" => Self::Standard(Box::new(factorial_f)),
             "sqrt" => Self::Standard(Box::new(sqrt_f)),
+            "cosh" => Self::Standard(Box::new(cosh_f)),
+            "sinh" => Self::Standard(Box::new(sinh_f)),
+            "tanh" => Self::Standard(Box::new(tanh_f)),
+            "acos" => Self::Standard(Box::new(acos_f)),
+            "asin" => Self::Standard(Box::new(asin_f)),
+            "atan" => Self::Standard(Box::new(atan_f)),
+            "log" => Self::Standard(Box::new(log_f)),
+            "ln" => Self::Standard(Box::new(ln_f)),
+            "max" => Self::Standard(Box::new(max_f)),
+            "min" => Self::Standard(Box::new(min_f)),
+            "avg" => Self::Standard(Box::new(avg_f)),
+            "stdev" => Self::Standard(Box::new(stdev_f)),
             "clear" => Self::Standard(Box::new(clear_v)),
             _ => Self::Nil // Returned if function identifier does not exist.
         }
@@ -194,4 +210,162 @@ pub fn cot_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::erro
         }
     }
     return Err(Box::new(IncorrectNumberOfArgumentsError{name: "cot", found:input.len(), requires:1})) // any more than 1 input = error
+}
+
+pub fn cosh_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() == 1{
+        if let SmartValue::Number(number) = input[0] {
+            let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().cosh()).unwrap());
+            return Ok(vec![value])
+        }
+    }
+    return Err(Box::new(IncorrectNumberOfArgumentsError{name: "cosh", found:input.len(), requires:1}))
+}
+
+pub fn sinh_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() == 1{
+        if let SmartValue::Number(number) = input[0] {
+            let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().sinh()).unwrap());
+            return Ok(vec![value])
+        }
+    }
+    return Err(Box::new(IncorrectNumberOfArgumentsError{name: "sinh", found:input.len(), requires:1}))
+}
+
+pub fn tanh_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() == 1{
+        if let SmartValue::Number(number) = input[0] {
+            let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().tanh()).unwrap());
+            return Ok(vec![value])
+        }
+    }
+    return Err(Box::new(IncorrectNumberOfArgumentsError{name: "tanh", found:input.len(), requires:1}))
+}
+
+pub fn acos_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() == 1{
+        if let SmartValue::Number(number) = input[0] {
+            let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().acos()).unwrap());
+            return Ok(vec![value])
+        }
+    }
+    return Err(Box::new(IncorrectNumberOfArgumentsError{name: "acos", found:input.len(), requires:1}))
+}
+
+pub fn asin_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() == 1{
+        if let SmartValue::Number(number) = input[0] {
+            let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().asin()).unwrap());
+            return Ok(vec![value])
+        }
+    }
+    return Err(Box::new(IncorrectNumberOfArgumentsError{name: "asin", found:input.len(), requires:1}))
+}
+
+pub fn atan_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() == 1{
+        if let SmartValue::Number(number) = input[0] {
+            let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().atan()).unwrap());
+            return Ok(vec![value])
+        }
+    }
+    return Err(Box::new(IncorrectNumberOfArgumentsError{name: "atan", found:input.len(), requires:1}))
+}
+
+pub fn log_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() == 1{
+        if let SmartValue::Number(number) = input[0] {
+            let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().log10()).unwrap());
+            return Ok(vec![value])
+        }
+    }
+    return Err(Box::new(IncorrectNumberOfArgumentsError{name: "log", found:input.len(), requires:1}))
+}
+
+pub fn ln_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() == 1{
+        if let SmartValue::Number(number) = input[0] {
+            let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().ln()).unwrap());
+            return Ok(vec![value])
+        }
+    }
+    return Err(Box::new(IncorrectNumberOfArgumentsError{name: "ln", found:input.len(), requires:1}))
+}
+
+pub fn mul_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
+    if input.len() != 0 {
+        let mut mul = Decimal::from(1);
+        for i in input {
+            if let SmartValue::Number(number) = i {
+                mul *= number;
+            }
+        }
+        return Ok(vec![SmartValue::Number(mul)]);
+    }
+    return Err(Box::new(TypeMismatchError {}))
+}
+
+pub fn max_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() != 0{
+        let mut max = Decimal::from(i64::min_value());
+        for i in input{
+            if let SmartValue::Number(number) = i{
+                if number > max{max = number;}
+            }
+        }
+        return Ok(vec![SmartValue::Number(max)]);
+    }
+    return Err(Box::new(TypeMismatchError{}))
+
+}
+
+pub fn min_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() != 0{
+        let mut min = Decimal::from(i64::max_value());
+        for i in input{
+            if let SmartValue::Number(number) = i{
+                if number < min{min = number;}
+            }
+        }
+        return Ok(vec![SmartValue::Number(min)]);
+    }
+    return Err(Box::new(TypeMismatchError{}))
+
+}
+
+pub fn avg_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    let size = Decimal::from_usize(input.len()).unwrap();
+    if input.len() != 0{
+        let mut avg = Decimal::from(0);
+        for i in input{
+            if let SmartValue::Number(number) = i{
+                avg += number.div(size);
+            }
+        }
+        return Ok(vec![SmartValue::Number(avg)]);
+    }
+    return Err(Box::new(TypeMismatchError{}))
+
+}
+
+pub fn stdev_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    let size = Decimal::from_usize(input.len()).unwrap();
+    let copy = input.clone();
+    if input.len() != 0{
+        let mut avg = Decimal::from(0);
+        let mut val = Decimal::from(0);
+        for i in input{
+            if let SmartValue::Number(number) = i{
+                avg += number.div(size);
+            }
+        }
+        for  i in copy{
+            if let SmartValue::Number(number) = i{
+                val += (number*number) - (Decimal::from(2)*(number*avg)) + (avg * avg);
+            }
+        }
+        let stdev = SmartValue::Number(Decimal::from_f64((val/size).to_f64().unwrap().sqrt()).unwrap());
+        return Ok(vec![stdev]);
+    }
+    return Err(Box::new(TypeMismatchError{}))
 }
