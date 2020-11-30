@@ -115,6 +115,14 @@ impl Shell{
         self.term.append(txt)
     }
 
+    pub fn remove_query(&mut self){
+        let len = self.text().len() as u32;
+        let query_len = self.query.len() as u32;
+        self.buffer().unwrap().remove(len-query_len, len);
+        self.sbuf.remove(len-query_len, len);
+        self.query.clear();
+    }
+
     pub fn append_mode(&mut self) {
         self.term.append(&self.mode.to_string());
         self.sbuf.append(&"A".repeat(self.mode.to_string().len())); // uses the A style (the first one)

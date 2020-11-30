@@ -13,7 +13,7 @@ fltk = "0.10.14"
 clipboard = "0.5.0"
 statrs = "0.13.0"
 nalgebra = "0.23.1"
-approx = "0.4.0"
+fxhash = "0.2.1"
 
 [profile.release]
 lto = true
