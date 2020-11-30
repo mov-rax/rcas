@@ -13,8 +13,8 @@ use std::ops::Div;
 use crate::rcas_lib::DataType::Number;
 
 ///Shows to the world all of the standard functions given by default.
-pub static STANDARD_FUNCTIONS:[&str;28] = ["cos", "sin", "tan", "sec", "csc", "cot", "mod", "plot", "sum", "exp", "factorial", "sqrt", "clear", "^", "!", "cosh",
-                                            "sinh", "tanh", "acos", "asin", "atan", "log", "ln", "mul", "max", "min", "avg", "stdev"];
+pub static STANDARD_FUNCTIONS:[&str;30] = ["cos", "sin", "tan", "sec", "csc", "cot", "mod", "plot", "sum", "exp", "factorial", "sqrt", "clear", "^", "!", "cosh",
+                                            "sinh", "tanh", "acos", "asin", "atan", "log", "ln", "mul", "max", "min", "avg", "stdev", "mag", "angle"];
 
 pub enum Function{
     Standard(Box<dyn Fn(Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>>),
@@ -50,6 +50,8 @@ impl Function {
             "min" => Self::Standard(Box::new(min_f)),
             "avg" => Self::Standard(Box::new(avg_f)),
             "stdev" => Self::Standard(Box::new(stdev_f)),
+            "mag" => Self::Standard(Box::new(mag_f)),
+            "angle" => Self::Standard(Box::new(angle_f)),
             "clear" => Self::Standard(Box::new(clear_v)),
             _ => Self::Nil // Returned if function identifier does not exist.
         }
@@ -368,4 +370,31 @@ pub fn stdev_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::er
         return Ok(vec![stdev]);
     }
     return Err(Box::new(TypeMismatchError{}))
+}
+
+pub fn mag_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() != 0{
+        let mut value = Decimal::from(0);
+        for i in input{
+            if let SmartValue::Number(number) = i{
+                value += (number*number);
+            }
+        }
+        return Ok(vec![SmartValue::Number(Decimal::from_f64(value.to_f64().unwrap().sqrt()).unwrap())])
+    }
+    return Err(Box::new(TypeMismatchError{}))
+}
+
+pub fn angle_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    if input.len() == 2{
+        if let SmartValue::Number(num1) = input[0]{
+            if let SmartValue::Number(num2) = input[1]{
+                let angle = (num2.to_f64().unwrap()/num1.to_f64().unwrap()).atan();
+                let angle = Decimal::from_f64(angle).unwrap();
+                let number = SmartValue::Number(angle);
+                return Ok(vec![number]);
+            }
+        }
+    }
+    return Err(Box::new(IncorrectNumberOfArgumentsError {name: "angle", found:input.len(), requires:2}))
 }
