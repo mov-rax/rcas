@@ -24,6 +24,8 @@ mod rcas_functions;
 mod rcas_gui;
 mod data;
 
+#[macro_use]
+extern crate approx; // For the macro relative_eq!
 
 fn main() {
 
@@ -56,7 +58,6 @@ fn main() {
     window.make_resizable(true);
     window.end();
     window.show();
-
     //this should be removed. It is only for testing purposes
     environment.add_type("ans", "Matrix");
     environment.add_type("A", "21");
@@ -163,7 +164,6 @@ fn main() {
                     }
                     shell.append_mode();
                     shell.renew_query(); // clears the current query and puts its value into history
-
                     true
                 },
                 Key::BackSpace => { // BACKSPACE TO REMOVE CHARACTER FROM SHELL AND THE QUERY

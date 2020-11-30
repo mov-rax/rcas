@@ -12,6 +12,8 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::time::Instant;
 use std::fmt::{Display, Debug, Formatter};
+extern crate nalgebra as na;
+use na::{Vector3, Rotation3, Matrix, Matrix3x4, DMatrix};
 
 //constants
 const ADD:char = '+'; //addition
@@ -139,6 +141,38 @@ impl RCas{
 
     pub fn query(&self, input:&str) -> QueryResult {
         let time = Instant::now();
+        if input.chars().nth(0).unwrap() == '['{
+            let mut strvec: Vec<String> = input.split(&[';', '[', ']'][..]).map(|x| x.parse().unwrap()).collect();
+            let mut i = 0;
+            while i < strvec.len() {
+                if strvec[i].is_empty() {
+                    strvec.remove(i);
+                }
+                i += 1;
+            }
+            let rows = strvec.len();
+            let mut rowvec: Vec<Vec<f64>> = Vec::new();
+            for i in &strvec {
+                rowvec.push(i.split_whitespace().map(|x| x.parse().unwrap()).collect());
+            }
+            for i in 0..rowvec.len(){
+                if i < rowvec.len()-1{
+                    if rowvec[i].len() != rowvec[i+1].len(){
+                        return QueryResult::Error(String::from("Not a valid matrix."))
+                    }
+                }
+            }
+            let mut matrixvec: Vec<f64> = Vec::new();
+            for i in rowvec.iter() {
+                for x in i {
+                    matrixvec.push(*x);
+                }
+            }
+            let columns = matrixvec.len() / rows;
+            let matrix = DMatrix::from_iterator(columns, rows, matrixvec.iter().cloned());
+            let matrix = nalgebra::DMatrix::transpose(&matrix);
+            return QueryResult::Simple(matrix.to_string())
+        }
         match parser(input) {
             Ok(parsed) => {
                 let time = time.elapsed().as_micros();
