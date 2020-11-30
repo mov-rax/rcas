@@ -157,6 +157,7 @@ impl RCas{
 
                 // this looks really ugly, but it works for variable assignment.
                 let result = if assignment == None{
+                    self.environment.insert("ans".to_string(), wrapper.values.clone()); // adds to ans
                     wrapper.to_result()
                 } else {
                     if let Some(values) = wrapper.values.get(0){
@@ -166,7 +167,8 @@ impl RCas{
                         }
                         let (_, id) = assignment.unwrap();
 
-                        self.environment.insert(id.clone(), wrapper.values.clone()); // adds the assignment to the environment
+                        self.environment.insert(id.clone(), wrapper.values.clone()); // adds the assignment to the
+                        self.environment.insert("ans".to_string(), wrapper.values.clone()); // adds to ans
                         return match values{
                             SmartValue::Number(number) => QueryResult::Assign(QueryAssign {
                                 id,
