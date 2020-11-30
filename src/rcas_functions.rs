@@ -115,10 +115,14 @@ pub fn exp_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::erro
     if input.len() == 2{
         if let SmartValue::Number(base) = input[0]{
             if let SmartValue::Number(exponent) = input[1]{
-                let number = base.to_f64().unwrap().powf(exponent.to_f64().unwrap());
-                let number = Decimal::from_f64(number).unwrap();
-                let number = SmartValue::Number(number);
-                return Ok(vec![number]);
+                let base = base.to_f64().unwrap();
+                let exponent = exponent.to_f64().unwrap();
+                let number = base.powf(exponent);
+                let number = Decimal::from_f64(number);
+                if let Some(number) = number{
+                    return Ok(vec![SmartValue::Number(number)]);
+                }
+                return Err(Box::new(OverflowError{}))
             }
         }
     }

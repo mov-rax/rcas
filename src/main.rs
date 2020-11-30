@@ -1,5 +1,5 @@
 use std::ops::Deref;
-use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue, QueryResult, Command};
+use crate::rcas_lib::{Wrapper, RCas, SmartValue, QueryResult, Command};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
 use crate::rcas_gui::{Shell, EnvironmentTable, PlotViewer, MatrixView};
@@ -24,8 +24,6 @@ mod rcas_functions;
 mod rcas_gui;
 mod data;
 
-#[macro_use]
-extern crate approx; // For the macro relative_eq!
 
 fn main() {
 
@@ -49,7 +47,7 @@ fn main() {
     let mut shell = Shell::new(5,5,490,790);
     let mut environment = EnvironmentTable::new(500, 5, 500, 407, "Environment");
     let mut plot_viewer = PlotViewer::new(500, 450, 500, 333, "Plot Viewer");
-    let mut cas = RCas::new();
+    let mut cas = Rc::from(RefCell::from(RCas::new())); // a shareable RCas object :)
 
     let mut last_window_size:(i32, i32) = (window.width(), window.height());
 
@@ -58,6 +56,7 @@ fn main() {
     window.make_resizable(true);
     window.end();
     window.show();
+
     //this should be removed. It is only for testing purposes
     environment.add_type("ans", "Matrix");
     environment.add_type("A", "21");
@@ -124,12 +123,14 @@ fn main() {
 
     let mut controlled = false;
     let pvc = plot_viewer.clone(); // a nice reference to the plot viewer
+    let cas = cas.clone();
     let mut shell_clone = shell.clone();
     shell_clone.handle( move |ev:Event| {
         match ev{
             Event::KeyDown => match app::event_key(){ // gets a keypress
                 Key::Enter | Key::KPEnter => {
                     let mut pvc = pvc.borrow_mut(); // Gets a mutable reference to the PlotViewer
+                    let mut cas = cas.borrow_mut(); // Gets a mutable reference to cas
 
 
                     //let now = Instant::now();
@@ -152,6 +153,9 @@ fn main() {
                                 Command::ClearScreen => shell.clear(),
                                 _ => {}
                             }
+                        },
+                        QueryResult::Assign(_assigned) =>{
+                            shell.insert_normal("\n");
                         }
                         _ => {}
                     }
@@ -164,6 +168,7 @@ fn main() {
                     }
                     shell.append_mode();
                     shell.renew_query(); // clears the current query and puts its value into history
+
                     true
                 },
                 Key::BackSpace => { // BACKSPACE TO REMOVE CHARACTER FROM SHELL AND THE QUERY
@@ -178,20 +183,14 @@ fn main() {
                     }
                 },
                 Key::Up => { // Goes up the entries
-                    let len = shell.text().len() as u32;
-                    let query_len = shell.query.len() as u32;
-                    shell.buffer().unwrap().remove(len-query_len, len);
-                    shell.query.clear();
+                    shell.remove_query();
                     let text = shell.older_history();
                     shell.insert_normal(&*text);
                     shell.query = text;
                     true
                 },
                 Key::Down => { // goes down the entries
-                    let len = shell.text().len() as u32;
-                    let query_len = shell.query.len() as u32;
-                    shell.buffer().unwrap().remove(len-query_len, len);
-                    shell.query.clear();
+                    shell.remove_query();
                     let text = shell.newer_history();
                     shell.insert_normal(&*text);
                     shell.query = text;
