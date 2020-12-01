@@ -146,6 +146,7 @@ impl RCas{
         let time = Instant::now();
         match self.parser(input) {
             Ok(mut parsed) => {
+
                 let time = time.elapsed().as_micros();
                 let mut assignment = None; // used to check if there was an assignment
                 if let Some(value) = parsed.get(0){
@@ -155,8 +156,9 @@ impl RCas{
                     }
                 }
                 let mut wrapper = Wrapper::compose(parsed);
+                //Wrapper::recurse_print(&wrapper.values, 0);
                 wrapper.solve();
-
+                //Wrapper::recurse_print(&wrapper.values, 0);
                 let mut environment = self.environment.borrow_mut(); // sets ans
                 // this looks really ugly, but it works for variable assignment.
                 let result = if assignment == None{
@@ -402,7 +404,7 @@ impl RCas{
                     continue
                 }
                 //if nth is - and is first to appear, then it must be a negative
-                if nth == '-' && i == 0 || i == beginning_index+1{
+                if nth == '-' && (i == 0 || i == beginning_index+1){
                     buf.push('-');
                     continue
                 }
@@ -535,7 +537,9 @@ impl RCas{
     fn calculate(input: &mut Vec<SmartValue>){
         let mut count:usize = 0;
         let mut last_comma_location:usize = 0;
-
+        //print_sv_vec(&input);
+        //Wrapper::recurse_print(&input, 0);
+        //println!("---");
         // does magic with Vec<SmartValue> that have Commas, i.e., are parameters in functions
         loop{
             if input.get(count) == None { // All indices have been looked through
@@ -555,14 +559,21 @@ impl RCas{
             }
 
             if let Some(SmartValue::Comma) = input.get(count){ // if it has a comma, it will compute all the values that were before it
+
+                let comma_remove = |inny:&mut Vec<SmartValue>| {
+                    for i in 0..inny.len(){
+                        if let Some(value) = inny.get(i){
+                            if *value == SmartValue::Comma{
+                                inny.remove(i);
+                            }
+                        }
+                    }
+                };
                 let range = (last_comma_location..count); // a range of important information
                 let range_len = range.len();
-                //let mut value = range.map(|x| input[x]).collect::<Vec<SmartValue>>();
-                Self::calculate(&mut input[range].to_vec());
-                //input.insert(count,value[0].clone());
-                count = (count as i32 + (1i32 - range_len as i32)) as usize;
-                last_comma_location = count;
-                input.remove(count); // removes the comma.
+                Self::calculate(&mut input[range.clone()].to_vec());
+                comma_remove(input); // I tried removing it using math but I guess I couldn't figure out how to make it work consistently
+
                 continue;
             }
             count += 1;
@@ -579,7 +590,6 @@ impl RCas{
             if let Some(SmartValue::Function(name)) = input.get(count){
                 if let Some(val) = input.get(count+1){ //if there is a value in front of a function, it is not a handle to a function!
                     if let SmartValue::Placeholder(parameters) = val{ // A placeholder MUST be in front of a function, otherwise it will not be executed.
-
                         let function = rcas_functions::Function::get(name.as_str()); // gets the function from its identifier
 
                         let value:Result<Vec<SmartValue>, Box<dyn std::error::Error>> = match function{
@@ -596,7 +606,7 @@ impl RCas{
                                 input.remove(count+1);
                                 input.remove(count);
                                 for i in 0..val.len(){ // INSERTS EVERY VALUE RETURNED INTO INPUT
-                                    input.insert(count+i, val[i].clone())
+                                    input.insert(count+i, val[i].clone());
                                 }
                             },
                             Err(err) => { // IF THERE IS AN ERROR, EVERY VALUE IS REMOVED.
@@ -791,8 +801,42 @@ impl Wrapper{
     }
     ///Composes a Wrapper.
     pub fn compose(input: Vec<SmartValue>) -> Self{
-        Wrapper {values: RCas::composer(input)}
+        //Self::recurse_print(&input, 0);
+        let values = RCas::composer(input);
+        //Self::recurse_print(&values, 0);
+        Wrapper {values}
     }
+
+    pub fn recurse_print(input:&Vec<SmartValue>, level:usize){
+        for value in input{
+            match value{
+                SmartValue::Number(num) => {
+                    println!("{}:{}", level, num);
+                },
+                SmartValue::Function(name) => {
+                    println!("{}:{}", level, &name);
+                },
+                SmartValue::Placeholder(holder) => {
+                    println!("{}:PLACEHOLDER", level);
+                    Self::recurse_print(&holder, level+1);
+                },
+                SmartValue::Operator(opr) => {
+                    println!("{}:{}", level, *opr);
+                },
+                SmartValue::LParen => {
+                    println!("{}:(", level);
+                },
+                SmartValue::RParen => {
+                    println!("{}:)", level);
+                },
+                SmartValue::Comma => {
+                    println!("{}:,", level);
+                }
+                _ => println!("{}:?", level)
+            }
+        }
+    }
+
     ///Solves a Wrapper.
     pub fn solve(&mut self){
         self.values = recurse_solve(self.values.clone())
@@ -1037,6 +1081,8 @@ fn is_assignment(input:&str) -> Option<(String, usize)>{
 
 fn get_calculated(input: Vec<SmartValue>) -> Vec<SmartValue>{
     let mut input = input;
+    // Wrapper::recurse_print(&input,0);
+    // println!("----");
     RCas::calculate(&mut input);
     input
 }

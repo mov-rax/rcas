@@ -115,6 +115,7 @@ fn main() {
         }
     });
 
+
     let mut controlled = false;
     let pvc = plot_viewer.clone(); // a nice reference to the plot viewer
     let cas = cas.clone();
