@@ -131,13 +131,15 @@ impl<'a> error::Error for IncorrectNumberOfArgumentsError<'a>{}
 impl error::Error for OverflowError{}
 
 pub struct RCas{
-    environment: FxHashMap<String, Vec<SmartValue>> // Environment that holds user-defined variables and functions. It is an FxHashMap instead of a HashMap for speed purposes.
+    // Environment that holds user-defined variables and functions. It is an FxHashMap instead of a HashMap for speed purposes.
+    // The Environment is encapsulated in an Rc<RefCell<>> In order for it to freely and safely shared to other processes.
+    environment: Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>
 }
 
 impl RCas{
 
     pub fn new() -> RCas{
-        RCas {environment: FxHashMap::default()}
+        RCas {environment: Rc::from(RefCell::from(FxHashMap::default()))}
     }
 
     pub fn query(&mut self, input:&str) -> QueryResult {
@@ -155,9 +157,15 @@ impl RCas{
                 let mut wrapper = Wrapper::compose(parsed);
                 wrapper.solve();
 
+                let mut environment = self.environment.borrow_mut(); // sets ans
                 // this looks really ugly, but it works for variable assignment.
                 let result = if assignment == None{
-                    self.environment.insert("ans".to_string(), wrapper.values.clone()); // adds to ans
+                    if let Some(SmartValue::Cmd(_)) = wrapper.values.get(0){
+                        // DO NOTHING. YOU DON'T WANT TO ADD COMMAND VALUES TO THE ENVIRONMENT.
+                    } else {
+                        environment.insert("ans".to_string(), wrapper.values.clone()); // sets ans
+                    }
+
                     wrapper.to_result()
                 } else {
                     if let Some(values) = wrapper.values.get(0){
@@ -167,8 +175,8 @@ impl RCas{
                         }
                         let (_, id) = assignment.unwrap();
 
-                        self.environment.insert(id.clone(), wrapper.values.clone()); // adds the assignment to the
-                        self.environment.insert("ans".to_string(), wrapper.values.clone()); // adds to ans
+                        environment.insert(id.clone(), wrapper.values.clone()); // adds the assignment to the
+                        environment.insert("ans".to_string(), wrapper.values.clone()); // adds to ans
                         return match values{
                             SmartValue::Number(number) => QueryResult::Assign(QueryAssign {
                                 id,
@@ -233,6 +241,8 @@ impl RCas{
         //ONE RULE MUST FOLLOWED, WHICH IS THAT EACH NTH IN THE LOOP CAN ONLY SEE
         //THE NTH IN FRONT OF IT. GOING BACK TO CHECK VALUES IS NOT ALLOWED.
 
+
+
         // GETS THE INPUT
         let input = { // [[4 2 3] [4 3 2]]
             let mut flag = false;
@@ -284,6 +294,7 @@ impl RCas{
             Err(err) => return Err(Box::from(err))
         };
 
+        let mut environment = self.environment.borrow_mut(); // gets a mutable reference to the environment.
         let mut temp:Vec<SmartValue> = Vec::with_capacity(30); //temp value that will be returned
         let mut buf:Vec<char> = Vec::new(); //buffer for number building
         let mut counter = 0; //used to keep track of parentheses
@@ -369,6 +380,7 @@ impl RCas{
                     continue;
                 }
 
+
                 //if buf currently isn't building a number and the next char isn't a number,
                 //and it is not a - sign, then something is wrong.
                 if !number && (!NUM.contains(next_nth.ok_or(GenericError)?) && next_nth.ok_or(GenericError)? != '(' && !SYM.contains(next_nth.ok_or(GenericError)?)) && nth != '-'{
@@ -390,7 +402,7 @@ impl RCas{
                     continue
                 }
                 //if nth is - and is first to appear, then it must be a negative
-                if nth == '-' && i == 0{
+                if nth == '-' && i == 0 || i == beginning_index+1{
                     buf.push('-');
                     continue
                 }
@@ -439,22 +451,24 @@ impl RCas{
                 let foo = &buf.iter().collect::<String>();
                 if let Some(next) = next_nth {
                     let mut found = false;
-                    if next == '(' || next == ')' || NUM.contains(next) || OPR.contains(next) {
+                    if next == '(' || next == ')' || next == ',' || NUM.contains(next) || OPR.contains(next) {
                         if rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()) {
                             temp.push(SmartValue::Function(foo.clone()));
                             //number = true;
                             paren_open = false;
                             found = true;
+                            operator = false;
                             position += 1;
                             buf.clear();
                             continue
-                        } else if self.environment.contains_key(foo) {
-                            for value in self.environment.get(foo).unwrap() {
+                        } else if environment.contains_key(foo) {
+                            for value in environment.get(foo).unwrap() {
                                 temp.push(value.clone());
                             }
                             //number = true;
                             paren_open = false;
                             found = true;
+                            operator = false;
                             position += 1;
                             buf.clear();
                             continue
@@ -470,8 +484,8 @@ impl RCas{
                     if rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()){
                         temp.push(SmartValue::Function(foo.clone()));
                         buf.clear();
-                    } else if self.environment.contains_key(foo){
-                        for value in self.environment.get(foo).unwrap() {
+                    } else if environment.contains_key(foo){
+                        for value in environment.get(foo).unwrap() {
                             temp.push(value.clone());
                         }
                         buf.clear();
@@ -479,29 +493,6 @@ impl RCas{
                         return Err(Box::new(UnknownIdentifierError{position, identifier:foo.clone()}))
                     }
                 }
-
-                // if let Some(x) = next_nth{
-                //     if x == '(' || NUM.contains(x) || OPR.contains(x){ //next nth is (, or a number, or an operator
-                //         //TODO: Add variable and custom function identification
-                //         let foo = &buf.iter().collect::<String>();
-                //         if rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()){
-                //             temp.push(SmartValue::Function(foo.clone()));
-                //             buf.clear();
-                //             continue
-                //         }
-                //
-                //         if self.environment.contains_key(&*foo){ // If there is a variable defined for the identifier in the buffer
-                //             for value in self.environment.get(foo).unwrap(){
-                //                 temp.push(value.clone());
-                //             }
-                //             buf.clear();
-                //             continue
-                //         }
-                //
-                //         return Err(Box::new(UnknownIdentifierError{position, identifier:foo.clone()}))
-                //     }
-                // }
-
 
                 number = false;
                 operator = false;
@@ -569,15 +560,9 @@ impl RCas{
                 //let mut value = range.map(|x| input[x]).collect::<Vec<SmartValue>>();
                 Self::calculate(&mut input[range].to_vec());
                 //input.insert(count,value[0].clone());
-                count += 1 - range_len;
+                count = (count as i32 + (1i32 - range_len as i32)) as usize;
                 last_comma_location = count;
                 input.remove(count); // removes the comma.
-                // This if let block checks to see if there is a final parameter being passed through, and ensures that it is counted.
-                // if let Some(val) = input.get(count){ // if there exists a SmartValue at the count index
-                //     if let None = input.get(count+1){ // if there is no Next value
-                //
-                //     }
-                // }
                 continue;
             }
             count += 1;
@@ -742,6 +727,10 @@ impl RCas{
         }
     }
 
+    /// Returns a safe reference to the rcas environment.
+    pub fn get_environment(&mut self) -> Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>{
+        self.environment.clone()
+    }
 
 }
 

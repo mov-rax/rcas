@@ -48,7 +48,6 @@ fn main() {
     let mut environment = EnvironmentTable::new(500, 5, 500, 407, "Environment");
     let mut plot_viewer = PlotViewer::new(500, 450, 500, 333, "Plot Viewer");
     let mut cas = Rc::from(RefCell::from(RCas::new())); // a shareable RCas object :)
-
     let mut last_window_size:(i32, i32) = (window.width(), window.height());
 
     //let mut controller = GUIController::new();
@@ -57,11 +56,6 @@ fn main() {
     window.end();
     window.show();
 
-    //this should be removed. It is only for testing purposes
-    environment.add_type("ans", "Matrix");
-    environment.add_type("A", "21");
-    environment.add_type("F", "Function");
-    //end of testing
 
     let mut plot_viewer_clone = plot_viewer.clone();
     let plot_viewer = Rc::from(RefCell::from(plot_viewer));
@@ -125,12 +119,14 @@ fn main() {
     let pvc = plot_viewer.clone(); // a nice reference to the plot viewer
     let cas = cas.clone();
     let mut shell_clone = shell.clone();
+    let mut enviro = environment.clone();
     shell_clone.handle( move |ev:Event| {
         match ev{
             Event::KeyDown => match app::event_key(){ // gets a keypress
                 Key::Enter | Key::KPEnter => {
                     let mut pvc = pvc.borrow_mut(); // Gets a mutable reference to the PlotViewer
                     let mut cas = cas.borrow_mut(); // Gets a mutable reference to cas
+                    let mut rcas_environment = cas.get_environment(); // Gets the internal rcas environment
 
 
                     //let now = Instant::now();
@@ -148,7 +144,7 @@ fn main() {
                             fltk::dialog::beep(fltk::dialog::BeepType::Error); // a nice beep to show that you did something wrong
                             //shell.insert_normal("\n"); // newline character
                         },
-                        QueryResult::Execute(cmd) => { // Execute commands here
+                        QueryResult::Execute(cmd) => { // Execute commands that affect the GUI here.
                             match cmd{
                                 Command::ClearScreen => shell.clear(),
                                 _ => {}
@@ -156,6 +152,7 @@ fn main() {
                         },
                         QueryResult::Assign(_assigned) =>{
                             shell.insert_normal("\n");
+                            enviro.add_type("test", "testy");
                         }
                         _ => {}
                     }
@@ -163,6 +160,9 @@ fn main() {
                     pvc.add_test_img_tab("OOGA"); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
                     pvc.redraw();
                     pvc.end();
+
+                    enviro.update_table(rcas_environment);
+
                     if answer.len() != 0{
                         shell.append_answer(&format!("{}\n", answer)); // appends the result to the shell
                     }

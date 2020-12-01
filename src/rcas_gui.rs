@@ -17,6 +17,7 @@ use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
 use std::any::Any;
 use fltk::input::{Input, FloatInput};
+use fxhash::FxHashMap;
 
 const COLOR_SELECTED_FILL:u32 = 0xB7C6E0;
 const COLOR_SELECTED_BORDER:u32 = 0x0F0F0F;
@@ -226,35 +227,39 @@ impl DerefMut for Shell{
 #[derive(Debug, Clone)]
 pub( crate) struct EnvironmentTable{
     env: MultiBrowser,
-    pub lines: u32
+    pub lines: Rc<RefCell<u32>>
 }
 
 impl EnvironmentTable{
     pub fn new(x:i32, y:i32, width:i32, height:i32, title:&str) -> EnvironmentTable{
         let env = MultiBrowser::new(x,y,width,height,title);
-        EnvironmentTable {env, lines:0}
+        EnvironmentTable {env, lines:Rc::from(RefCell::from(0))}
     }
 
     /// Adds an item onto the Environment Table with a given identifier.
     pub(crate) fn add(&mut self, id:String){
         self.env.add(&id);
-        self.lines += 1;
+        let mut lines = self.lines.borrow_mut();
+        *lines += 1;
     }
 
     pub fn add_type(&mut self, id:&str, _type:&str){
-        let tabs = (0..self.env.width()).step_by(45).map(|_| '\t').collect::<String>();
+        //let tabs = (0..self.env.width()).step_by(45).map(|_| '\t').collect::<String>();
+        let tabs = " | ".to_string();
         //let separator = "\t|\t";
         let mut string = id.to_string();
         string.push_str(&tabs);
         //string.push_str(separator);
         string.push_str(_type);
         self.env.add(&string);
-        self.lines += 1;
+        let mut lines = self.lines.borrow_mut();
+        *lines += 1;
     }
 
     /// Safely removes an item on the Environment Table when given its identifier.
     pub fn remove(&mut self, id:String){
-        for i in 0..self.lines{
+        let mut lines = self.lines.borrow_mut();
+        for i in 0..*lines{
             let text = self.text(i+1);
             if let Some(text) = text{
                 if text.contains(&id){
@@ -262,7 +267,7 @@ impl EnvironmentTable{
                 }
             }
         }
-        self.lines -= 1;
+        *lines -= 1;
     }
     /// Removes a row given a number. Row starts at 1.
     pub fn remove_row(&mut self, row:u32){
@@ -271,12 +276,38 @@ impl EnvironmentTable{
 
     /// Returns the selected Row (if any selected)
     pub fn get_selected(&self) -> Option<u32>{
-        for i in 0..self.lines{
+        let lines = *self.lines.borrow();
+        for i in 0..lines{
             if self.selected(i+1){
                 return Some(i+1);
             }
         }
         None
+    }
+
+    pub fn clear_table(&mut self){
+        let mut lines = self.lines.borrow_mut();
+        self.env.clear();
+        *lines = 0;
+    }
+
+    pub fn update_table(&mut self, internal:Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>){
+        self.clear_table(); //clears the table of all values, and resets the line count back to 0
+        let internal = internal.borrow();
+        // this gets all of necessary information from the environment table
+        let values = internal.iter().filter_map(|(k,v)| {
+            let data_type = match v.get(0){
+                Some(SmartValue::Number(num)) => format!("{}", num),
+                Some(SmartValue::Function(func)) => format!("{}", func),
+                _ => "UNIMPLEMENTED".to_string()
+            };
+            Some((k.clone(), data_type))
+        }).collect::<Vec<(String,String)>>();
+        // adds each value that is in the internal environment table to the GUI
+        for (id, _type) in values{
+            self.add_type(&*id, &*_type);
+        }
+        self.env.sort();
     }
 }
 
