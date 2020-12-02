@@ -47,7 +47,7 @@ fn main() {
     let mut shell = Shell::new(5,5,490,790);
     let mut environment = EnvironmentTable::new(500, 5, 500, 407, "Environment");
     let mut plot_viewer = PlotViewer::new(500, 450, 500, 333, "Plot Viewer");
-    let mut cas = Rc::from(RefCell::from(RCas::new())); // a shareable RCas object :)
+    let mut rcas = Rc::from(RefCell::from(RCas::new())); // a shareable RCas object :)
     let mut last_window_size:(i32, i32) = (window.width(), window.height());
 
     //let mut controller = GUIController::new();
@@ -118,7 +118,7 @@ fn main() {
 
     let mut controlled = false;
     let pvc = plot_viewer.clone(); // a nice reference to the plot viewer
-    let cas = cas.clone();
+    let cas = rcas.clone();
     let mut shell_clone = shell.clone();
     let mut enviro = environment.clone();
     shell_clone.handle( move |ev:Event| {
@@ -128,7 +128,6 @@ fn main() {
                     let mut pvc = pvc.borrow_mut(); // Gets a mutable reference to the PlotViewer
                     let mut cas = cas.borrow_mut(); // Gets a mutable reference to cas
                     let mut rcas_environment = cas.get_environment(); // Gets the internal rcas environment
-
 
                     //let now = Instant::now();
                     let result = cas.query(&shell.query); // gets the result
@@ -236,6 +235,7 @@ fn main() {
 
     shell_clone.set_callback(|| println!("EEE"));
 
+    let cas = rcas.clone();
     let mut environment_clone = environment.clone();
     environment_clone.handle(move |ev:Event|{
         match ev{
@@ -268,7 +268,12 @@ fn main() {
                         if let Some(choice) = item.popup(x,y){ //tooltip pops up and the choice selected gets recieved
                             //TODO - IMPLEMENT EDIT
                             match &*choice.label().unwrap(){
-                                "Remove" => environment.remove_row(row),
+                                "Remove" => {
+                                    let mut cas = cas.borrow_mut();
+                                    let rcas_environment = cas.get_environment();
+                                    environment.remove_row(row, rcas_environment);
+
+                                },
                                 _ => println!("NOT IMPLEMENTED YET")
                             }
                         }

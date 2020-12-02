@@ -270,8 +270,14 @@ impl EnvironmentTable{
         *lines -= 1;
     }
     /// Removes a row given a number. Row starts at 1.
-    pub fn remove_row(&mut self, row:u32){
-        self.env.remove(row);
+    pub fn remove_row(&mut self, row:u32, rcas_environment: Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>){
+        if let Some(text) = self.env.text(row){
+            let mut rcas_environment = rcas_environment.borrow_mut();
+            let text:String = text;
+            let text = text.chars().take_while(|c| *c != ' ').collect::<String>();
+            rcas_environment.remove(&*text);
+            self.env.remove(row);
+        }
     }
 
     /// Returns the selected Row (if any selected)
