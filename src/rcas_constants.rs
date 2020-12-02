@@ -10,7 +10,7 @@ impl ConstantController{
          match identifier{
             "PI" => Some(SmartValue::Number(Decimal::from_f64(std::f64::consts::PI).unwrap())),
             "E" => Some(SmartValue::Number(Decimal::from_f64(std::f64::consts::E).unwrap())),
-             "TAU" => Some(SmartValue::Number(Decimal::from_f64(std::f64::consts::TAU).unwrap())), //2 times pi
+             "TAU" => Some(SmartValue::Number(Decimal::from_f64(2.0*std::f64::consts::PI).unwrap())), //2 times pi
              "PHI" => Some(SmartValue::Number(Decimal::from_f64(1.61803398874989484820).unwrap())), //the golden ratio
              "W" => Some(SmartValue::Number(Decimal::from_f64(1.61803398874989484820).unwrap())), //Wallis constant
              "H" => Some(SmartValue::Number(Decimal::from_f64(6.626068 * 10.0_f64.powf(-34.00)).unwrap())), //PLanck's

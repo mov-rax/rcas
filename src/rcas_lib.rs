@@ -315,6 +315,7 @@ impl RCas{
         let mut environment = self.environment.borrow_mut(); // gets a mutable reference to the environment.
         let mut temp:Vec<SmartValue> = Vec::with_capacity(30); //temp value that will be returned
         let mut buf:Vec<char> = Vec::new(); //buffer for number building
+        let mut mat_buf:Vec<Vec<SmartValue>> = Vec::new(); //buffer for matrix building
         let mut counter = 0; //used to keep track of parentheses
         let mut number = false; //used to keep track of number building
         let mut position = 0; //used to keep track of error position
@@ -326,6 +327,9 @@ impl RCas{
         let mut was_double = false; // used to know if a currently-building string was started with double or single quotes
         let mut beginning_index = 0; // used to keep track of the starting index, in case there is an assignment
         let mut parameters = Vec::new(); // holds identifiers of any parameters when a query is an assignment
+        let mut building_matrix = false; //used to keep track of matrix-building
+        let mut rows = 0;
+        let mut cols = 0;
         let assignment = is_assignment(&*input); // checks to see if this input is an assignment :)
 
         if let Some((_, index, params)) = &assignment{
@@ -335,7 +339,6 @@ impl RCas{
                 temp.push(SmartValue::Parameters(parameters.clone())); // pushes a marker
             }
         }
-
 
         if parameters.len() != 0 {
             println!("{:?}", &parameters)
@@ -351,10 +354,20 @@ impl RCas{
             let nth:char = input.chars().nth(i).ok_or(GenericError)?;
             let next_nth:Option<char> = input.chars().nth(i + 1);
 
+
+            // if nth == '['{
+            //     building_matrix = true;
+            //     counter += 1;
+            // }
+            //
+            // if nth == ' ' && building_matrix{
+            //     let foo = buf.iter().collect::<String>();
+            // }
+
             if nth == r#"""#.chars().nth(0).unwrap(){ // double quotes
                 if string{
                     string = false;
-                    let text = buf.iter().map(|x| x).collect::<String>();
+                    let text = buf.iter().collect::<String>();
                     temp.push(SmartValue::Text(text));
                     buf.clear();
                     continue;
@@ -371,7 +384,7 @@ impl RCas{
                         continue;
                     }
                     string = false;
-                    let text = buf.iter().map(|x| x).collect::<String>();
+                    let text = buf.iter().collect::<String>();
                     temp.push(SmartValue::Text(text));
                     buf.clear();
                     continue;
