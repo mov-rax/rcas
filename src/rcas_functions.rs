@@ -331,7 +331,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "cos", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn tan_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn tan_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().tan()).unwrap());
