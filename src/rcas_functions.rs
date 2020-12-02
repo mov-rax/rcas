@@ -685,16 +685,16 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "deg2rad", found:input.len(), requires:1}))
     }
 
-    pub fn radtodeg_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
-        if input.len() == 1{
-            if let SmartValue::Number(n) = input[0]{
-                let rad2deg = n.to_f64().unwrap() * (180.0/(103993.0/33102.0));
+    pub fn radtodeg_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
+        if input.len() == 1 {
+            if let SmartValue::Number(n) = input[0] {
+                let rad2deg = n.to_f64().unwrap() * (180.0 / (103993.0 / 33102.0));
                 let rad2deg = Decimal::from_f64(rad2deg).unwrap();
                 let value = SmartValue::Number(rad2deg);
                 return Ok(vec![value])
             }
         }
-        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "rad2deg", found:input.len(), requires:1}))
+        return Err(Box::new(IncorrectNumberOfArgumentsError { name: "rad2deg", found: input.len(), requires: 1 }))
     }
     pub fn variance_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         let size = Decimal::from_usize(input.len()).unwrap();
