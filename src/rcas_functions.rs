@@ -8,63 +8,120 @@ use std::fmt::Display;
 use std::error::Error;
 use std::fmt;
 use statrs;
-use crate::rcas_lib::{SmartValue, FormattingError, TypeMismatchError, IncorrectNumberOfArgumentsError, Command, NegativeNumberError, OverflowError};
+use crate::rcas_lib::{SmartValue, FormattingError, TypeMismatchError, IncorrectNumberOfArgumentsError, Command, NegativeNumberError, OverflowError, RCas, Wrapper};
 use std::ops::Div;
 use crate::rcas_lib::DataType::Number;
+use fxhash::FxHashMap;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 ///Shows to the world all of the standard functions given by default.
 pub static STANDARD_FUNCTIONS:[&str;30] = ["cos", "sin", "tan", "sec", "csc", "cot", "mod", "plot", "sum", "exp", "factorial", "sqrt", "clear", "^", "!", "cosh",
                                             "sinh", "tanh", "acos", "asin", "atan", "log", "ln", "mul", "max", "min", "avg", "stdev", "mag", "angle"];
 
+
 pub enum Function{
-    Standard(Box<dyn Fn(Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>>),
+    Standard(Box<dyn Fn(&mut FunctionController, Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>>),
     Nil
 }
 
-impl Function {
-    pub fn get(identifier:&str) -> Self {
-        match identifier{
-            "cos" => Self::Standard(Box::new(Self::cos_f)),
-            "sin" => Self::Standard(Box::new(Self::sin_f)),
-            "tan" => Self::Standard(Box::new(Self::tan_f)),
-            "sec" => Self::Standard(Box::new(Self::sec_f)),
-            "csc" => Self::Standard(Box::new(Self::csc_f)),
-            "cot" => Self::Standard(Box::new(Self::cot_f)),
-            "mod" => Self::Standard(Box::new(Self::mod_f)),
-            "sum" => Self::Standard(Box::new(Self::sum_f)),
-            "mul" => Self::Standard(Box::new(Self::mul_f)),
-            "exp" => Self::Standard(Box::new(Self::exp_f)),
-            "^" => Self::Standard(Box::new(Self::exp_f)),
-            "factorial" => Self::Standard(Box::new(Self::factorial_f)),
-            "!" => Self::Standard(Box::new(Self::factorial_f)),
-            "sqrt" => Self::Standard(Box::new(Self::sqrt_f)),
-            "cosh" => Self::Standard(Box::new(Self::cosh_f)),
-            "sinh" => Self::Standard(Box::new(Self::sinh_f)),
-            "tanh" => Self::Standard(Box::new(Self::tanh_f)),
-            "acos" => Self::Standard(Box::new(Self::acos_f)),
-            "asin" => Self::Standard(Box::new(Self::asin_f)),
-            "atan" => Self::Standard(Box::new(Self::atan_f)),
-            "log" => Self::Standard(Box::new(Self::log_f)),
-            "ln" => Self::Standard(Box::new(Self::ln_f)),
-            "max" => Self::Standard(Box::new(Self::max_f)),
-            "min" => Self::Standard(Box::new(Self::min_f)),
-            "avg" => Self::Standard(Box::new(Self::avg_f)),
-            "stdev" => Self::Standard(Box::new(Self::stdev_f)),
-            "mag" => Self::Standard(Box::new(Self::mag_f)),
-            "angle" => Self::Standard(Box::new(Self::angle_f)),
-            "clear" => Self::Standard(Box::new(Self::clear_v)),
-            _ => Self::Nil // Returned if function identifier does not exist.
+pub struct FunctionController{
+    environment: Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>,
+    custom_function_id: String, // used just for a current custom function
+    custom_function: Vec<SmartValue>, //used for a current custom function
+}
+
+impl FunctionController {
+
+    /// Creates a new FunctionController that requires an environment to be given.
+    pub fn new(environment:Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>) -> Self{
+        FunctionController { environment , custom_function_id: String::new(), custom_function: Vec::new()}
+    }
+
+    pub fn get(&mut self, identifier: &str) -> Function {
+        match identifier {
+            "cos" => Function::Standard(Box::new(Self::cos_f)),
+            "sin" => Function::Standard(Box::new(Self::sin_f)),
+            "tan" => Function::Standard(Box::new(Self::tan_f)),
+            "sec" => Function::Standard(Box::new(Self::sec_f)),
+            "csc" => Function::Standard(Box::new(Self::csc_f)),
+            "cot" => Function::Standard(Box::new(Self::cot_f)),
+            "mod" => Function::Standard(Box::new(Self::mod_f)),
+            "sum" => Function::Standard(Box::new(Self::sum_f)),
+            "mul" => Function::Standard(Box::new(Self::mul_f)),
+            "exp" => Function::Standard(Box::new(Self::exp_f)),
+            "^" => Function::Standard(Box::new(Self::exp_f)),
+            "factorial" => Function::Standard(Box::new(Self::factorial_f)),
+            "!" => Function::Standard(Box::new(Self::factorial_f)),
+            "sqrt" => Function::Standard(Box::new(Self::sqrt_f)),
+            "cosh" => Function::Standard(Box::new(Self::cosh_f)),
+            "sinh" => Function::Standard(Box::new(Self::sinh_f)),
+            "tanh" => Function::Standard(Box::new(Self::tanh_f)),
+            "acos" => Function::Standard(Box::new(Self::acos_f)),
+            "asin" => Function::Standard(Box::new(Self::asin_f)),
+            "atan" => Function::Standard(Box::new(Self::atan_f)),
+            "log" => Function::Standard(Box::new(Self::log_f)),
+            "ln" => Function::Standard(Box::new(Self::ln_f)),
+            "max" => Function::Standard(Box::new(Self::max_f)),
+            "min" => Function::Standard(Box::new(Self::min_f)),
+            "avg" => Function::Standard(Box::new(Self::avg_f)),
+            "stdev" => Function::Standard(Box::new(Self::stdev_f)),
+            "mag" => Function::Standard(Box::new(Self::mag_f)),
+            "angle" => Function::Standard(Box::new(Self::angle_f)),
+            "clear" => Function::Standard(Box::new(Self::clear_v)),
+            //"drop" => Function::Standard(Box::new(Self::drop_v)),
+            func => {
+                let environment = self.environment.borrow();
+                if let Some(value) = environment.get(func){
+                    self.custom_function_id = func.to_string();
+                    self.custom_function = value.clone();
+                    return Function::Standard(Box::new(Self::custom_function_f))
+                }
+                Function::Nil
+            } // Returned if function identifier does not exist.
         }
     }
 
-    pub fn clear_v(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
+    pub fn custom_function_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
+
+        let mut answer:Vec<SmartValue> = (&self.custom_function[1..]).to_vec();
+        if let SmartValue::Parameters(params) = &self.custom_function[0]{
+            if params.len() != input.len(){
+                return Err(Box::new(IncorrectNumberOfArgumentsError { name: "custom_function", found: input.len(), requires: params.len() }))
+            }
+
+            for (index, value) in params.iter().enumerate(){
+                answer = answer.iter().map(|s| {
+                    if let SmartValue::Variable(id) = s{
+                        if id == value{
+                            return input[index].clone();
+                        }
+                    }
+                    s.clone()
+                }).collect();
+            }
+            let answer = Wrapper::compose(answer);
+            return Ok(answer.values.clone())
+        }
+        Err(Box::new(TypeMismatchError{}))
+    }
+    // pub fn drop_v(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    //     let mut environment = self.environment.borrow_mut();
+    //     for value in &input{
+    //         if let SmartValue::Function(id) = value{
+    //             if environment.
+    //         }
+    //     }
+    // }
+
+    pub fn clear_v(&mut self,input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
         if input.is_empty(){
             return Ok(vec![SmartValue::Cmd(Command::ClearScreen)])
         }
         return Err(Box::new(IncorrectNumberOfArgumentsError{name:"clear", found:input.len(), requires:0}))
     }
 
-    pub fn sqrt_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn sqrt_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0]{
                 let number = number.to_f64().unwrap();
@@ -76,7 +133,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "sqrt", found: input.len(), requires: 1}))
     }
 
-    pub fn factorial_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn factorial_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0]{
 
@@ -110,7 +167,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError {name: "factorial", found: input.len(), requires: 1}))
     }
 
-    pub fn exp_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn exp_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 2{
             if let SmartValue::Number(base) = input[0]{
                 if let SmartValue::Number(exponent) = input[1]{
@@ -128,7 +185,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError {name: "exp", found:input.len(), requires:2}))
     }
 
-    pub fn sum_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn sum_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() != 0{
             let mut sum = Decimal::from(0);
             for i in input{
@@ -142,7 +199,7 @@ impl Function {
 
     }
 
-    pub fn sin_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn sin_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0]{
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().sin()).unwrap());
@@ -152,7 +209,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "sin", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn cos_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn cos_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().cos()).unwrap());
@@ -162,7 +219,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "cos", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn tan_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn tan_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().tan()).unwrap());
@@ -172,7 +229,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "tan", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn mod_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn mod_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 2{
             if let SmartValue::Number(value) = input[0]{
                 if let SmartValue::Number(modder) = input[1]{
@@ -187,7 +244,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "mod", found:input.len(), requires:2})) // any more than 1 input = error
     }
 
-    pub fn sec_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn sec_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(1.0 / number.to_f64().unwrap().cos()).unwrap());
@@ -197,7 +254,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "sec", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn csc_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn csc_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(1.0 / number.to_f64().unwrap().sin()).unwrap());
@@ -207,7 +264,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "csc", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn cot_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn cot_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().cos() / number.to_f64().unwrap().sin()).unwrap() );
@@ -217,7 +274,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "cot", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn cosh_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn cosh_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().cosh()).unwrap());
@@ -227,7 +284,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "cosh", found:input.len(), requires:1}))
     }
 
-    pub fn sinh_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn sinh_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().sinh()).unwrap());
@@ -237,7 +294,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "sinh", found:input.len(), requires:1}))
     }
 
-    pub fn tanh_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn tanh_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().tanh()).unwrap());
@@ -247,7 +304,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "tanh", found:input.len(), requires:1}))
     }
 
-    pub fn acos_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn acos_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().acos()).unwrap());
@@ -257,7 +314,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "acos", found:input.len(), requires:1}))
     }
 
-    pub fn asin_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn asin_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().asin()).unwrap());
@@ -267,7 +324,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "asin", found:input.len(), requires:1}))
     }
 
-    pub fn atan_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn atan_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().atan()).unwrap());
@@ -277,7 +334,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "atan", found:input.len(), requires:1}))
     }
 
-    pub fn log_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn log_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().log10()).unwrap());
@@ -287,7 +344,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "log", found:input.len(), requires:1}))
     }
 
-    pub fn ln_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn ln_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().ln()).unwrap());
@@ -297,7 +354,7 @@ impl Function {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "ln", found:input.len(), requires:1}))
     }
 
-    pub fn mul_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
+    pub fn mul_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
         if input.len() != 0 {
             let mut mul = Decimal::from(1);
             for i in input {
@@ -310,7 +367,7 @@ impl Function {
         return Err(Box::new(TypeMismatchError {}))
     }
 
-    pub fn max_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn max_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() != 0{
             let mut max = Decimal::from(i64::min_value());
             for i in input{
@@ -324,7 +381,7 @@ impl Function {
 
     }
 
-    pub fn min_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn min_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() != 0{
             let mut min = Decimal::from(i64::max_value());
             for i in input{
@@ -338,7 +395,7 @@ impl Function {
 
     }
 
-    pub fn avg_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn avg_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         let size = Decimal::from_usize(input.len()).unwrap();
         if input.len() != 0{
             let mut avg = Decimal::from(0);
@@ -353,7 +410,7 @@ impl Function {
 
     }
 
-    pub fn stdev_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn stdev_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         let size = Decimal::from_usize(input.len()).unwrap();
         let copy = input.clone();
         if input.len() != 0{
@@ -375,7 +432,7 @@ impl Function {
         return Err(Box::new(TypeMismatchError{}))
     }
 
-    pub fn mag_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn mag_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() != 0{
             let mut value = Decimal::from(0);
             for i in input{
@@ -388,7 +445,7 @@ impl Function {
         return Err(Box::new(TypeMismatchError{}))
     }
 
-    pub fn angle_f(input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn angle_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         if input.len() == 2{
             if let SmartValue::Number(num1) = input[0]{
                 if let SmartValue::Number(num2) = input[1]{
@@ -401,7 +458,14 @@ impl Function {
         }
         return Err(Box::new(IncorrectNumberOfArgumentsError {name: "angle", found:input.len(), requires:2}))
     }
-
 }
+
+
+
+
+
+
+
+
 
 

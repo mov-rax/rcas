@@ -13,6 +13,7 @@ use std::cell::RefCell;
 use std::time::Instant;
 use std::fmt::{Display, Debug, Formatter};
 use fxhash::FxHashMap;
+use crate::rcas_functions::FunctionController;
 
 //constants
 const ADD:char = '+'; //addition
@@ -133,20 +134,24 @@ impl error::Error for OverflowError{}
 pub struct RCas{
     // Environment that holds user-defined variables and functions. It is an FxHashMap instead of a HashMap for speed purposes.
     // The Environment is encapsulated in an Rc<RefCell<>> In order for it to freely and safely shared to other processes.
-    environment: Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>
+    environment: Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>,
+    // The Function Controller is used for any pre-defined functions that are given for users. It is able to modify the RCas environment.
+    function_controller: FunctionController,
 }
 
 impl RCas{
 
     pub fn new() -> RCas{
-        RCas {environment: Rc::from(RefCell::from(FxHashMap::default()))}
+        let environment = Rc::from(RefCell::from(FxHashMap::default()));
+        let function_controller = FunctionController::new(environment.clone());
+        RCas {environment, function_controller}
     }
 
     pub fn query(&mut self, input:&str) -> QueryResult {
         let time = Instant::now();
         match self.parser(input) {
             Ok(mut parsed) => {
-
+                Wrapper::recurse_print(&parsed, 0);
                 let time = time.elapsed().as_micros();
                 let mut assignment = None; // used to check if there was an assignment
                 if let Some(value) = parsed.get(0){
@@ -157,7 +162,7 @@ impl RCas{
                 }
                 let mut wrapper = Wrapper::compose(parsed);
                 //Wrapper::recurse_print(&wrapper.values, 0);
-                wrapper.solve();
+                wrapper.solve(self);
                 //Wrapper::recurse_print(&wrapper.values, 0);
                 let mut environment = self.environment.borrow_mut(); // sets ans
                 // this looks really ugly, but it works for variable assignment.
@@ -188,6 +193,18 @@ impl RCas{
                                 id: identifier.clone(),
                                 data: DataType::Function
                             }),
+                            SmartValue::Parameters(_) => QueryResult::Assign(QueryAssign {
+                                id: "function".to_string(),
+                                data: DataType::Function
+                            }),
+                            SmartValue::Variable(identifier) => QueryResult::Assign(QueryAssign {
+                                id: identifier.clone(),
+                                data: DataType::Function
+                            }),
+                            SmartValue::Text(identifier) => QueryResult::Assign((QueryAssign {
+                                id: identifier.clone(),
+                                data: DataType::Function
+                            })),
                             _ => QueryResult::Error("ASSIGNMENT NOT IMPLEMENTED".to_string()),
                         }
                     }
@@ -306,11 +323,23 @@ impl RCas{
         let mut operator = false; //used to keep track of operator usage
         let mut paren_open = false; //used to keep track of a prior open
         let mut comma = false; //used to keep track of commas
+        let mut string = false; // used to keep track of string-building
+        let mut was_double = false; // used to know if a currently-building string was started with double or single quotes
         let mut beginning_index = 0; // used to keep track of the starting index, in case there is an assignment
+        let mut parameters = Vec::new(); // holds identifiers of any parameters when a query is an assignment
         let assignment = is_assignment(&*input); // checks to see if this input is an assignment :)
 
-        if let Some((_, index)) = assignment{
-            beginning_index = index;
+        if let Some((_, index, params)) = &assignment{
+            beginning_index = *index;
+            if let Some(params) = params{
+                parameters = params.clone();
+                temp.push(SmartValue::Parameters(parameters.clone())); // pushes a marker
+            }
+        }
+
+
+        if parameters.len() != 0 {
+            println!("{:?}", &parameters)
         }
 
         // Converts a vector of characters into a Result<Decimal, Err>
@@ -322,6 +351,40 @@ impl RCas{
         for i in beginning_index..input.len(){
             let nth:char = input.chars().nth(i).ok_or(GenericError)?;
             let next_nth:Option<char> = input.chars().nth(i + 1);
+
+            if nth == r#"""#.chars().nth(0).unwrap(){ // double quotes
+                if string{
+                    string = false;
+                    let text = buf.iter().map(|x| x).collect::<String>();
+                    temp.push(SmartValue::Text(text));
+                    buf.clear();
+                    continue;
+                }
+                string = true;
+                was_double = true;
+                continue;
+            }
+
+            if nth == r#"'"#.chars().nth(0).unwrap(){ // single quotes
+                if string{
+                    if was_double{
+                        buf.push(r#"'"#.chars().nth(0).unwrap());
+                        continue;
+                    }
+                    string = false;
+                    let text = buf.iter().map(|x| x).collect::<String>();
+                    temp.push(SmartValue::Text(text));
+                    buf.clear();
+                    continue;
+                }
+                string = true;
+                continue;
+            }
+
+            if string{ // if we are building a string, then push it to the buffer.
+                buf.push(nth);
+                continue;
+            }
 
 
             //check parentheses
@@ -453,6 +516,27 @@ impl RCas{
                 let foo = &buf.iter().collect::<String>();
                 if let Some(next) = next_nth {
                     let mut found = false;
+
+
+                    if let Some(value) = environment.get(foo){ // custom function finding :)
+                        let eee = value.iter().take_while(|s| {
+                            if let SmartValue::Variable(_) = s{
+                                return false;
+                            }
+                            true
+                        }).count();
+                        if eee != value.len(){
+                            temp.push(SmartValue::Function(foo.clone()));
+                            paren_open = false;
+                            found = true;
+                            operator = false;
+                            position += 1;
+                            buf.clear();
+                            continue
+                        }
+                    }
+
+
                     if next == '(' || next == ')' || next == ',' || NUM.contains(next) || OPR.contains(next) {
                         if rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()) {
                             temp.push(SmartValue::Function(foo.clone()));
@@ -463,7 +547,15 @@ impl RCas{
                             position += 1;
                             buf.clear();
                             continue
-                        } else if environment.contains_key(foo) {
+                        } else if parameters.contains(foo){
+                            temp.push(SmartValue::Variable(foo.clone())); // pushes the variable onto the temporary array
+                            paren_open = false;
+                            found = true;
+                            operator = false;
+                            position += 1;
+                            buf.clear();
+                            continue
+                        } else if environment.contains_key(foo){
                             for value in environment.get(foo).unwrap() {
                                 temp.push(value.clone());
                             }
@@ -485,6 +577,9 @@ impl RCas{
                 } else {
                     if rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()){
                         temp.push(SmartValue::Function(foo.clone()));
+                        buf.clear();
+                    } else if parameters.contains(foo){
+                        temp.push(SmartValue::Variable(foo.clone()));
                         buf.clear();
                     } else if environment.contains_key(foo){
                         for value in environment.get(foo).unwrap() {
@@ -526,7 +621,7 @@ impl RCas{
             temp.push(SmartValue::Number(to_dec(&buf)?))
         }
 
-        if let Some((id, _)) = assignment{ // if there was an assignment, this is a special type of parsed information :)
+        if let Some((id, _, _)) = assignment{ // if there was an assignment, this is a special type of parsed information :)
             return Ok(vec![SmartValue::Assign(id.clone(), temp)]) // returns a singular assign SmartValue
         }
 
@@ -534,7 +629,7 @@ impl RCas{
     }
 
     ///Only takes slices with NO PARENTHESES.
-    fn calculate(input: &mut Vec<SmartValue>){
+    fn calculate(&mut self, input: &mut Vec<SmartValue>){
         let mut count:usize = 0;
         let mut last_comma_location:usize = 0;
         //print_sv_vec(&input);
@@ -571,7 +666,7 @@ impl RCas{
                 };
                 let range = (last_comma_location..count); // a range of important information
                 let range_len = range.len();
-                Self::calculate(&mut input[range.clone()].to_vec());
+                self.calculate(&mut input[range.clone()].to_vec());
                 comma_remove(input); // I tried removing it using math but I guess I couldn't figure out how to make it work consistently
 
                 continue;
@@ -590,11 +685,10 @@ impl RCas{
             if let Some(SmartValue::Function(name)) = input.get(count){
                 if let Some(val) = input.get(count+1){ //if there is a value in front of a function, it is not a handle to a function!
                     if let SmartValue::Placeholder(parameters) = val{ // A placeholder MUST be in front of a function, otherwise it will not be executed.
-                        let function = rcas_functions::Function::get(name.as_str()); // gets the function from its identifier
-
+                        let function = self.function_controller.get(name.as_str()); // gets the function from its identifier
                         let value:Result<Vec<SmartValue>, Box<dyn std::error::Error>> = match function{
                             rcas_functions::Function::Standard(func) => {
-                                func(parameters.clone()) // Executes the function!!
+                                func(&mut self.function_controller, parameters.clone()) // Executes the function!!
                             },
                             rcas_functions::Function::Nil => { // Doesn't exist in standard functions, therefore it could be a user-defined function.
                                 // TODO - IMPLEMENT USER-DEFINED FUNCTIONS HERE
@@ -742,6 +836,47 @@ impl RCas{
         self.environment.clone()
     }
 
+    fn recurse_solve(&mut self, mut input:Vec<SmartValue>) -> Vec<SmartValue>{
+        //print_sv_vec(&input);
+        return if has_placeholder(&input) {
+            for x in 0..input.len() {
+                if let Some(SmartValue::Placeholder(holder)) = input.get(x) {
+                    //print_sv_vec(&holder);
+                    let solved = self.recurse_solve(holder.clone());
+                    // Doesn't remove the placeholder if there is a function before it.
+
+                    if let Some(SmartValue::Function(_)) = input.get(safe_sub(x)){
+                        //NOTHING HERE.
+                    } else if solved.len() == 0 { // if the solve returned NOTHING, and there is no function before this placeholder, then the entire answer must be nothing.
+                        return Vec::new()
+                    }
+
+
+                    // a nice way to get the resolved value. If the previous value is a not function, then it is just a Number.
+                    // Otherwise, it is probably parameters to a function, and as such should be in
+                    // A placeholder.
+                    let value = if let Some(SmartValue::Function(_)) = input.get(safe_sub(x)){ // if previous was a function, then put the solution in a placeholder.
+                        SmartValue::Placeholder(solved)
+                    } else {
+                        solved[0].clone()
+                    };
+                    input[x] = value;
+                }
+                //println!("X: {}", &input[x].get_value());
+            }
+            let mut input = input;
+
+            self.calculate(&mut input);
+            input
+        } else {
+            let mut input = input;
+            // Wrapper::recurse_print(&input,0);
+            // println!("----");
+            self.calculate(&mut input);
+            input
+        }
+    }
+
 }
 
 
@@ -792,7 +927,7 @@ pub struct SmartMatrix{
 
 #[derive(PartialEq, Clone)]
 pub struct Wrapper{
-    values: Vec<SmartValue>,
+    pub values: Vec<SmartValue>,
 }
 
 impl Wrapper{
@@ -831,15 +966,16 @@ impl Wrapper{
                 },
                 SmartValue::Comma => {
                     println!("{}:,", level);
-                }
-                _ => println!("{}:?", level)
+                },
+                SmartValue::Variable(id) => println!("{}:{}", level, id),
+                idk => println!("{}:{}", level, idk.get_value())
             }
         }
     }
 
     ///Solves a Wrapper.
-    pub fn solve(&mut self){
-        self.values = recurse_solve(self.values.clone())
+    pub fn solve(&mut self, rcas:&mut RCas){
+        self.values = rcas.recurse_solve(self.values.clone())
     }
 
     pub fn print_raw(&self){
@@ -849,7 +985,7 @@ impl Wrapper{
     pub fn to_string(&self) -> String{ sv_vec_string(&self.values) }
 
     pub fn to_result(&self) -> QueryResult{
-        if self.values.len() == 1{
+        if self.values.len() == 1 {
 
             return match &self.values[0]{
                 SmartValue::Error(err) => QueryResult::Error(err.clone()),
@@ -870,9 +1006,11 @@ pub enum SmartValue{
     Operator(char),
     Function(String), //holds a function identifier
     Number(Decimal),
+    Text(String),
     LParen,
     RParen,
-    //Variable(String), //variable does not require ( ), therefore there exists Function and Variable
+    Variable(String), // Utilized in user-defined functions. Each variable as an identifier attributed to it.
+    Parameters(Vec<String>), // A marker that is utilized during parsing that identifies the order in which the name of parameters are placed in a function declaration
     Placeholder(Vec<SmartValue>),
     Range(Decimal,Decimal,Decimal), // Lower, Step, Upper
     Label(String,Vec<SmartValue>), // A label can contains an identifier and a possible expression.
@@ -887,18 +1025,17 @@ impl SmartValue{
         let mut buf = String::new();
         match self{
             SmartValue::Operator(x) => buf.push(*x),
-            SmartValue::Function(_) => buf.push(FNC),
+            SmartValue::Function(id) => buf.push_str(id),
             SmartValue::Number(x) => {
                 let num = format!("{}", x);
-                for sus in num.chars(){
-                    buf.push(sus)
-                }
-
+                buf.push_str(&num);
             },
             SmartValue::LParen => buf.push('('),
             SmartValue::RParen => buf.push(')'),
             SmartValue::Placeholder(_) => buf.push(PHD),
-            //SmartValue::Variable(_) => buf.push(VAR),
+            SmartValue::Text(string) => buf.push_str(&**string),
+            SmartValue::Variable(id) => buf.push_str(id),
+            SmartValue::Parameters(_) => {}
             _ => buf.push('?')
         }
         buf
@@ -936,41 +1073,6 @@ fn safe_sub(input:usize) -> usize{
         0
     }
 }
-
-fn recurse_solve(mut input:Vec<SmartValue>) -> Vec<SmartValue>{
-    //print_sv_vec(&input);
-    return if has_placeholder(&input) {
-        for x in 0..input.len() {
-            if let Some(SmartValue::Placeholder(holder)) = input.get(x) {
-                //print_sv_vec(&holder);
-                let solved = recurse_solve(holder.clone());
-                // Doesn't remove the placeholder if there is a function before it.
-
-                if let Some(SmartValue::Function(_)) = input.get(safe_sub(x)){
-                    //NOTHING HERE.
-                } else if solved.len() == 0 { // if the solve returned NOTHING, and there is no function before this placeholder, then the entire answer must be nothing.
-                    return Vec::new()
-                }
-
-
-                // a nice way to get the resolved value. If the previous value is a not function, then it is just a Number.
-                // Otherwise, it is probably parameters to a function, and as such should be in
-                // A placeholder.
-                let value = if let Some(SmartValue::Function(_)) = input.get(safe_sub(x)){ // if previous was a function, then put the solution in a placeholder.
-                    SmartValue::Placeholder(solved)
-                } else {
-                   solved[0].clone()
-                };
-                input[x] = value;
-            }
-            //println!("X: {}", &input[x].get_value());
-        }
-        get_calculated(input)
-    } else {
-        get_calculated(input)
-    }
-}
-
 
 fn has_function(input:&Vec<SmartValue>) -> bool{
     let mut value = false;
@@ -1063,29 +1165,50 @@ pub fn sv_vec_string(sv:&Vec<SmartValue>) -> String {
     buf
 }
 /// Checks to see of an input contains an assignment. If it does, it returns the index after the assignment operator was found.
-fn is_assignment(input:&str) -> Option<(String, usize)>{
-    let identifier = input.chars().take_while(|x| *x != '=' ).collect::<String>();
+fn is_assignment(input:&str) -> Option<(String, usize, Option<Vec<String>>)>{
+
+    let mut identifier = input.chars().take_while(|x| *x != '=' ).collect::<String>();
+    let identifier_len = identifier.len();
+    let mut has_parameters = false;
+
     for x in identifier.chars(){
-        if !SYM.contains(x  ){
+        if !SYM.contains(x  ) && x != '(' && x != ')' && x != ','{
             return None;
         }
+        if x == '('{
+            has_parameters = true;
+        }
     }
-    let len = identifier.len();
-    if len == input.len(){
+    if identifier.chars().filter_map(|x| match x {
+        '(' => Some(1),
+        ')' => Some(-1),
+        _ => None
+    }).sum::<i32>() > 0 { // if it is within open parentheses, then this is no assignment.
         return None;
     }
-    Some((identifier, len))
+    // There is an identifier at this point.
+
+    //This will get the parameters if the assignment was that of a function.
+    let parameters = if identifier.chars().last().unwrap() == ')'{ // if there is a closing word there
+        let count = identifier.chars().take_while(|x| *x != '(').count();
+        let parameters = identifier.chars().skip(count+1).take_while(|x| *x != ')').collect::<String>();
+        let parameter_identifiers = parameters.split(",").map(|x| String::from(x)).collect::<Vec<String>>();
+        identifier = (&identifier[0..count]).to_string();
+        Some(parameter_identifiers)
+    } else {
+        None
+    };
+
+
+    if identifier_len == input.len(){
+        return None;
+    }
+    Some((identifier, identifier_len, parameters))
 }
 
 
 
-fn get_calculated(input: Vec<SmartValue>) -> Vec<SmartValue>{
-    let mut input = input;
-    // Wrapper::recurse_print(&input,0);
-    // println!("----");
-    RCas::calculate(&mut input);
-    input
-}
+
 
 
 
