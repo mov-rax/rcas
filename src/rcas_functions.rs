@@ -144,6 +144,19 @@ impl FunctionController {
         }
     }
 
+    fn rad_to_deg(&self, input:&mut Vec<SmartValue>){
+        let con = Decimal::from_f64(std::f64::consts::PI).unwrap();
+        let con2 = Decimal::from_f64(180.0).unwrap();
+        let con = con2/con;
+        if self.mode == CalculationMode::Degree{
+            for value in input{
+                if let SmartValue::Number(dec) = value{
+                    *dec = *dec * con;
+                }
+            }
+        }
+    }
+
     pub fn setmode_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
         if input.len() == 1{
             if let SmartValue::Text(string) = &input[0]{
@@ -424,33 +437,36 @@ impl FunctionController {
     }
 
     pub fn acos_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
-        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().acos()).unwrap());
-                return Ok(vec![value])
+                let mut clone = vec![value];
+                self.rad_to_deg(&mut clone);
+                return Ok(clone)
             }
         }
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "acos", found:input.len(), requires:1}))
     }
 
     pub fn asin_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
-        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().asin()).unwrap());
-                return Ok(vec![value])
+                let mut clone = vec![value];
+                self.rad_to_deg(&mut clone);
+                return Ok(clone)
             }
         }
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "asin", found:input.len(), requires:1}))
     }
 
     pub fn atan_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
-        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().atan()).unwrap());
-                return Ok(vec![value])
+                let mut clone = vec![value];
+                self.rad_to_deg(&mut clone);
+                return Ok(clone)
             }
         }
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "atan", found:input.len(), requires:1}))
