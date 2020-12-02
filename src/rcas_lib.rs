@@ -13,8 +13,9 @@ use std::cell::RefCell;
 use std::time::Instant;
 use std::fmt::{Display, Debug, Formatter};
 use fxhash::FxHashMap;
+use nalgebra;
 use crate::rcas_functions::{FunctionController, Function};
-
+use crate::rcas_constants::ConstantController;
 //constants
 const ADD:char = '+'; //addition
 const SUB:char = '-'; //subtraction
@@ -567,7 +568,14 @@ impl RCas{
                             position += 1;
                             buf.clear();
                             continue
-                        } else {
+                        } else if let Some(constant) = ConstantController::get(foo){
+                            temp.push(constant);
+                            paren_open = false;
+                            found = true;
+                            operator = false;
+                            position += 1;
+                            buf.clear();
+                        }{
                             return Err(Box::new(UnknownIdentifierError{position, identifier:foo.clone()}))
                         }
                     }
@@ -587,7 +595,10 @@ impl RCas{
                             temp.push(value.clone());
                         }
                         buf.clear();
-                    } else {
+                    } else if let Some(constant) = ConstantController::get(foo){
+                        temp.push(constant);
+                        buf.clear();
+                    }else {
                         return Err(Box::new(UnknownIdentifierError{position, identifier:foo.clone()}))
                     }
                 }

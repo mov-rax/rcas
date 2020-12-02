@@ -23,6 +23,7 @@ mod rcas_lib;
 mod rcas_functions;
 mod rcas_gui;
 mod data;
+mod rcas_constants;
 
 
 fn main() {
