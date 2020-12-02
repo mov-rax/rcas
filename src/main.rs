@@ -148,6 +148,7 @@ fn main() {
                         QueryResult::Execute(cmd) => { // Execute commands that affect the GUI here.
                             match cmd{
                                 Command::ClearScreen => shell.clear(),
+                                Command::RefreshEnvironment => shell.insert_normal("\n"),
                                 _ => {}
                             }
                         },

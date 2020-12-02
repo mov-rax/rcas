@@ -15,14 +15,48 @@ use fxhash::FxHashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 
-///Shows to the world all of the standard functions given by default.
-pub static STANDARD_FUNCTIONS:[&str;30] = ["cos", "sin", "tan", "sec", "csc", "cot", "mod", "plot", "sum", "exp", "factorial", "sqrt", "clear", "^", "!", "cosh",
-                                            "sinh", "tanh", "acos", "asin", "atan", "log", "ln", "mul", "max", "min", "avg", "stdev", "mag", "angle"];
-
 
 pub enum Function{
     Standard(Box<dyn Fn(&mut FunctionController, Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>>),
     Nil
+}
+
+impl PartialEq for Function{
+    fn eq(&self, other: &Self) -> bool {
+        return match self {
+            Function::Standard(_) => {
+                if let Function::Standard(_) = other {
+                    true
+                } else {
+                    false
+                }
+            },
+            Function::Nil => {
+                if let Function::Nil = other {
+                    return true;
+                }
+                false
+            },
+        }
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        return match self {
+            Function::Standard(_) => {
+                if let Function::Standard(_) = other {
+                    false
+                } else {
+                    true
+                }
+            },
+            Function::Nil => {
+                if let Function::Nil = other {
+                    return false;
+                }
+                true
+            },
+        }
+    }
 }
 
 pub struct FunctionController{
@@ -69,13 +103,15 @@ impl FunctionController {
             "mag" => Function::Standard(Box::new(Self::mag_f)),
             "angle" => Function::Standard(Box::new(Self::angle_f)),
             "clear" => Function::Standard(Box::new(Self::clear_v)),
-            //"drop" => Function::Standard(Box::new(Self::drop_v)),
+            "drop" => Function::Standard(Box::new(Self::drop_v)),
             func => {
-                let environment = self.environment.borrow();
-                if let Some(value) = environment.get(func){
-                    self.custom_function_id = func.to_string();
-                    self.custom_function = value.clone();
-                    return Function::Standard(Box::new(Self::custom_function_f))
+                let environment = self.environment.try_borrow();
+                if let Ok(environment) = environment{
+                    if let Some(value) = environment.get(func){
+                        self.custom_function_id = func.to_string();
+                        self.custom_function = value.clone();
+                        return Function::Standard(Box::new(Self::custom_function_f))
+                    }
                 }
                 Function::Nil
             } // Returned if function identifier does not exist.
@@ -83,6 +119,24 @@ impl FunctionController {
     }
 
     pub fn custom_function_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
+
+        let mut cas = RCas::new();
+
+        fn variable_replacement_loop(input: &SmartValue, value:&String, replacer:&SmartValue) -> SmartValue{
+            if let SmartValue::Placeholder(holder) = input.clone(){
+                let answer = holder.iter().map(|s| {
+                    if let SmartValue::Variable(id) = s{
+                        return replacer.clone()
+                    }
+                    if let SmartValue::Placeholder(_) = s {
+                        return variable_replacement_loop(s, value, replacer)
+                    }
+                    s.clone()
+                }).collect::<Vec<SmartValue>>();
+                return SmartValue::Placeholder(answer);
+            }
+            SmartValue::Error("idk fam".to_string())
+        }
 
         let mut answer:Vec<SmartValue> = (&self.custom_function[1..]).to_vec();
         if let SmartValue::Parameters(params) = &self.custom_function[0]{
@@ -97,22 +151,31 @@ impl FunctionController {
                             return input[index].clone();
                         }
                     }
+                    if let SmartValue::Placeholder(_) = s{
+                        return variable_replacement_loop(s, value, &input[index])
+                    }
                     s.clone()
                 }).collect();
             }
-            let answer = Wrapper::compose(answer);
-            return Ok(answer.values.clone())
+
+            let mut answer = RCas::composer(answer);
+            answer = cas.recurse_solve(answer);
+            return Ok(answer)
         }
         Err(Box::new(TypeMismatchError{}))
     }
-    // pub fn drop_v(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
-    //     let mut environment = self.environment.borrow_mut();
-    //     for value in &input{
-    //         if let SmartValue::Function(id) = value{
-    //             if environment.
-    //         }
-    //     }
-    // }
+
+    pub fn drop_v(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        let mut environment = self.environment.borrow_mut();
+        for value in &input{
+            if let SmartValue::Text(id) = value{
+                environment.remove(id);
+            } else {
+                return Err(Box::new(TypeMismatchError {}))
+            }
+        }
+        Ok(vec![SmartValue::Cmd(Command::RefreshEnvironment)])
+    }
 
     pub fn clear_v(&mut self,input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
         if input.is_empty(){

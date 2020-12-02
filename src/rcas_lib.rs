@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use std::time::Instant;
 use std::fmt::{Display, Debug, Formatter};
 use fxhash::FxHashMap;
-use crate::rcas_functions::FunctionController;
+use crate::rcas_functions::{FunctionController, Function};
 
 //constants
 const ADD:char = '+'; //addition
@@ -256,11 +256,9 @@ impl RCas{
     }
 
     ///Checks to see if rules were correctly followed. Returns Result.
-    fn parser(&self, input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
+    fn parser(&mut self, input:&str) -> Result<Vec<SmartValue>, Box<dyn error::Error>>{
         //ONE RULE MUST FOLLOWED, WHICH IS THAT EACH NTH IN THE LOOP CAN ONLY SEE
         //THE NTH IN FRONT OF IT. GOING BACK TO CHECK VALUES IS NOT ALLOWED.
-
-
 
         // GETS THE INPUT
         let input = { // [[4 2 3] [4 3 2]]
@@ -523,9 +521,12 @@ impl RCas{
                             if let SmartValue::Variable(_) = s{
                                 return false;
                             }
+                            if let SmartValue::Placeholder(_) = s{ // the only reason why there would be a placeholder is if there is a variable
+                                return false;
+                            }
                             true
-                        }).count();
-                        if eee != value.len(){
+                        }).count(); // this gets the length of the environment variable, not including any Variables being in it.
+                        if eee != value.len(){ // if it found a Variable, then it means that this is a function.
                             temp.push(SmartValue::Function(foo.clone()));
                             paren_open = false;
                             found = true;
@@ -538,7 +539,7 @@ impl RCas{
 
 
                     if next == '(' || next == ')' || next == ',' || NUM.contains(next) || OPR.contains(next) {
-                        if rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()) {
+                        if self.function_controller.get(foo) != Function::Nil{
                             temp.push(SmartValue::Function(foo.clone()));
                             //number = true;
                             paren_open = false;
@@ -575,7 +576,7 @@ impl RCas{
                         continue
                     }
                 } else {
-                    if rcas_functions::STANDARD_FUNCTIONS.contains(&foo.as_str()){
+                    if self.function_controller.get(foo) != Function::Nil{
                         temp.push(SmartValue::Function(foo.clone()));
                         buf.clear();
                     } else if parameters.contains(foo){
@@ -629,7 +630,7 @@ impl RCas{
     }
 
     ///Only takes slices with NO PARENTHESES.
-    fn calculate(&mut self, input: &mut Vec<SmartValue>){
+    pub fn calculate(&mut self, input: &mut Vec<SmartValue>){
         let mut count:usize = 0;
         let mut last_comma_location:usize = 0;
         //print_sv_vec(&input);
@@ -685,28 +686,51 @@ impl RCas{
             if let Some(SmartValue::Function(name)) = input.get(count){
                 if let Some(val) = input.get(count+1){ //if there is a value in front of a function, it is not a handle to a function!
                     if let SmartValue::Placeholder(parameters) = val{ // A placeholder MUST be in front of a function, otherwise it will not be executed.
-                        let function = self.function_controller.get(name.as_str()); // gets the function from its identifier
-                        let value:Result<Vec<SmartValue>, Box<dyn std::error::Error>> = match function{
-                            rcas_functions::Function::Standard(func) => {
-                                func(&mut self.function_controller, parameters.clone()) // Executes the function!!
-                            },
-                            rcas_functions::Function::Nil => { // Doesn't exist in standard functions, therefore it could be a user-defined function.
-                                // TODO - IMPLEMENT USER-DEFINED FUNCTIONS HERE
-                                Err(Box::new(GenericError {})) // MUST BE REPLACED LATER.
-                            }
-                        };
-                        match value {
-                            Ok(val) => {
-                                input.remove(count+1);
-                                input.remove(count);
-                                for i in 0..val.len(){ // INSERTS EVERY VALUE RETURNED INTO INPUT
-                                    input.insert(count+i, val[i].clone());
+
+                        fn take_while_loop(input:&Vec<SmartValue>) -> bool{
+                            input.iter().take_while(|s| {
+                                if let SmartValue::Variable(_) = s{
+                                    return false;
                                 }
-                            },
-                            Err(err) => { // IF THERE IS AN ERROR, EVERY VALUE IS REMOVED.
-                                input.clear();
-                                input.push(SmartValue::Error(err.to_string()));
-                                return;
+                                if let SmartValue::Placeholder(holder) = s{
+                                    return take_while_loop(holder)
+                                }
+                                true
+                            }).count() == input.len()
+                    }
+                        let len = parameters.iter().take_while(|s| {
+                            if let SmartValue::Variable(_) = s{
+                                return false;
+                            }
+                            if let SmartValue::Placeholder(holder) = s{
+                                return take_while_loop(holder)
+                            }
+                            true
+                        }).count();
+
+                        if len == parameters.len(){
+                            let function = self.function_controller.get(name.as_str()); // gets the function from its identifier
+                            let value:Result<Vec<SmartValue>, Box<dyn std::error::Error>> = match function{
+                                rcas_functions::Function::Standard(func) => {
+                                    func(&mut self.function_controller, parameters.clone()) // Executes the function!!
+                                },
+                                rcas_functions::Function::Nil => { // Doesn't exist in standard functions, therefore it could be a user-defined function.
+                                    Err(Box::new(GenericError {})) // MUST BE REPLACED LATER.
+                                }
+                            };
+                            match value {
+                                Ok(val) => {
+                                    input.remove(count+1);
+                                    input.remove(count);
+                                    for i in 0..val.len(){ // INSERTS EVERY VALUE RETURNED INTO INPUT
+                                        input.insert(count+i, val[i].clone());
+                                    }
+                                },
+                                Err(err) => { // IF THERE IS AN ERROR, EVERY VALUE IS REMOVED.
+                                    input.clear();
+                                    input.push(SmartValue::Error(err.to_string()));
+                                    return;
+                                }
                             }
                         }
                     }
@@ -792,7 +816,7 @@ impl RCas{
     ///Takes a Vec<SmartValue> and composes it such that no LParen or RParen
     /// exists. Sections wrapped by parentheses are stored in a series of
     /// SmartValue::Placeholder
-    fn composer(mut input: Vec<SmartValue>) -> Vec<SmartValue>{
+    pub fn composer(mut input: Vec<SmartValue>) -> Vec<SmartValue>{
         let mut placeholder_locations:Vec<usize> = Vec::new();
         let sections = number_of_parentheses_sections(&input);
         if sections == 0{ //no parentheses, therefore, no need to compose.
@@ -836,7 +860,7 @@ impl RCas{
         self.environment.clone()
     }
 
-    fn recurse_solve(&mut self, mut input:Vec<SmartValue>) -> Vec<SmartValue>{
+    pub fn recurse_solve(&mut self, mut input:Vec<SmartValue>) -> Vec<SmartValue>{
         //print_sv_vec(&input);
         return if has_placeholder(&input) {
             for x in 0..input.len() {
@@ -897,6 +921,7 @@ pub enum Command{
     ClearEnvironment, //clear("env")
     ClearAll, //clear("all")
     SavePlot, //saveplot("magic.png")
+    RefreshEnvironment
 }
 /// A structure that contains a raster (PNG) and vector (SVG) versions of a plot.
 /// The vector is used for displaying a plot in high-resolution.
@@ -1032,10 +1057,16 @@ impl SmartValue{
             },
             SmartValue::LParen => buf.push('('),
             SmartValue::RParen => buf.push(')'),
-            SmartValue::Placeholder(_) => buf.push(PHD),
+            SmartValue::Placeholder(holder) => {
+                buf.push('(');
+                for x in holder{
+                    buf.push_str(&*x.get_value());
+                }
+                buf.push(')');
+            },
             SmartValue::Text(string) => buf.push_str(&**string),
             SmartValue::Variable(id) => buf.push_str(id),
-            SmartValue::Parameters(_) => {}
+            SmartValue::Parameters(_) => {},
             _ => buf.push('?')
         }
         buf
