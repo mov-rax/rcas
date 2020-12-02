@@ -296,11 +296,7 @@ impl EnvironmentTable{
         let internal = internal.borrow();
         // this gets all of necessary information from the environment table
         let values = internal.iter().filter_map(|(k,v)| {
-            let data_type = match v.get(0){
-                Some(SmartValue::Number(num)) => format!("{}", num),
-                Some(SmartValue::Function(func)) => format!("{}", func),
-                _ => "UNIMPLEMENTED".to_string()
-            };
+            let data_type = v.iter().map(|x| x.get_value()).collect::<String>();
             Some((k.clone(), data_type))
         }).collect::<Vec<(String,String)>>();
         // adds each value that is in the internal environment table to the GUI
