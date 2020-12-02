@@ -8,7 +8,7 @@ use std::fmt::Display;
 use std::error::Error;
 use std::fmt;
 use statrs;
-use crate::rcas_lib::{SmartValue, FormattingError, TypeMismatchError, IncorrectNumberOfArgumentsError, Command, NegativeNumberError, OverflowError, RCas, Wrapper};
+use crate::rcas_lib::{SmartValue, FormattingError, TypeMismatchError, IncorrectNumberOfArgumentsError, Command, NegativeNumberError, OverflowError, RCas, Wrapper, CalculationMode};
 use std::ops::Div;
 use crate::rcas_lib::DataType::Number;
 use fxhash::FxHashMap;
@@ -63,13 +63,14 @@ pub struct FunctionController{
     environment: Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>,
     custom_function_id: String, // used just for a current custom function
     custom_function: Vec<SmartValue>, //used for a current custom function
+    mode: CalculationMode,
 }
 
 impl FunctionController {
 
     /// Creates a new FunctionController that requires an environment to be given.
     pub fn new(environment:Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>) -> Self{
-        FunctionController { environment , custom_function_id: String::new(), custom_function: Vec::new()}
+        FunctionController { environment , custom_function_id: String::new(), custom_function: Vec::new(), mode: CalculationMode::Radian}
     }
 
     pub fn get(&mut self, identifier: &str) -> Function {
@@ -115,6 +116,7 @@ impl FunctionController {
             "fe" => Function::Standard(Box::new(Self::fe_f)),
             "clear" => Function::Standard(Box::new(Self::clear_v)),
             "drop" => Function::Standard(Box::new(Self::drop_v)),
+            "setmode" => Function::Standard(Box::new(Self::setmode_f)),
             func => {
                 let environment = self.environment.try_borrow();
                 if let Ok(environment) = environment{
@@ -127,6 +129,40 @@ impl FunctionController {
                 Function::Nil
             } // Returned if function identifier does not exist.
         }
+    }
+
+    fn deg_to_rad(&self, input:&mut Vec<SmartValue>){
+        let con = Decimal::from_f64(std::f64::consts::PI).unwrap();
+        let con2 = Decimal::from_f64(180.0).unwrap();
+        let con = con/con2;
+        if self.mode == CalculationMode::Degree{
+            for value in input{
+                if let SmartValue::Number(dec) = value{
+                    *dec = *dec * con;
+                }
+            }
+        }
+    }
+
+    pub fn setmode_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
+        if input.len() == 1{
+            if let SmartValue::Text(string) = &input[0]{
+                match &**string {
+                    "rad" => {
+                        self.mode = CalculationMode::Radian;
+                        return Ok(vec![SmartValue::Cmd(Command::SetMode(CalculationMode::Radian))]);
+                    },
+                    "deg" => {
+                        self.mode = CalculationMode::Degree;
+                        return Ok(vec![SmartValue::Cmd(Command::SetMode(CalculationMode::Degree))]);
+                    },
+                    _ => {
+                        return Err(Box::new(TypeMismatchError {}))
+                    }
+                }
+            }
+        }
+        Err(Box::new(IncorrectNumberOfArgumentsError{ name:"set_mode", found: input.len(), requires: 1}))
     }
 
     pub fn custom_function_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
@@ -273,7 +309,8 @@ impl FunctionController {
 
     }
 
-    pub fn sin_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn sin_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0]{
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().sin()).unwrap());
@@ -283,7 +320,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "sin", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn cos_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn cos_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().cos()).unwrap());
@@ -318,7 +356,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "mod", found:input.len(), requires:2})) // any more than 1 input = error
     }
 
-    pub fn sec_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn sec_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(1.0 / number.to_f64().unwrap().cos()).unwrap());
@@ -328,7 +367,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "sec", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn csc_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn csc_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(1.0 / number.to_f64().unwrap().sin()).unwrap());
@@ -338,7 +378,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "csc", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn cot_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn cot_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().cos() / number.to_f64().unwrap().sin()).unwrap() );
@@ -348,7 +389,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "cot", found:input.len(), requires:1})) // any more than 1 input = error
     }
 
-    pub fn cosh_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn cosh_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().cosh()).unwrap());
@@ -358,7 +400,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "cosh", found:input.len(), requires:1}))
     }
 
-    pub fn sinh_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn sinh_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().sinh()).unwrap());
@@ -368,7 +411,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "sinh", found:input.len(), requires:1}))
     }
 
-    pub fn tanh_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn tanh_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().tanh()).unwrap());
@@ -378,7 +422,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "tanh", found:input.len(), requires:1}))
     }
 
-    pub fn acos_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn acos_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().acos()).unwrap());
@@ -388,7 +433,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "acos", found:input.len(), requires:1}))
     }
 
-    pub fn asin_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn asin_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().asin()).unwrap());
@@ -398,7 +444,8 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "asin", found:input.len(), requires:1}))
     }
 
-    pub fn atan_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+    pub fn atan_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        self.deg_to_rad(&mut input);
         if input.len() == 1{
             if let SmartValue::Number(number) = input[0] {
                 let value = SmartValue::Number(Decimal::from_f64(number.to_f64().unwrap().atan()).unwrap());
@@ -717,6 +764,9 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "fe", found:input.len(), requires:3}))
     }
 }
+
+
+
 
 
 

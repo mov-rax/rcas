@@ -149,8 +149,13 @@ fn main() {
                             match cmd{
                                 Command::ClearScreen => shell.clear(),
                                 Command::RefreshEnvironment => shell.insert_normal("\n"),
+                                Command::SetMode(mode) => {
+                                    shell.set_calculation_mode(mode);
+                                    shell.insert_normal("\n")
+                                }
                                 _ => {}
                             }
+
                         },
                         QueryResult::Assign(_assigned) =>{
                             shell.insert_normal("\n");
@@ -233,8 +238,6 @@ fn main() {
             _ => false, //any other event that is not needed
         }
     });
-
-    shell_clone.set_callback(|| println!("EEE"));
 
     let cas = rcas.clone();
     let mut environment_clone = environment.clone();

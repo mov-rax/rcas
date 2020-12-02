@@ -932,7 +932,8 @@ pub enum Command{
     ClearEnvironment, //clear("env")
     ClearAll, //clear("all")
     SavePlot, //saveplot("magic.png")
-    RefreshEnvironment
+    RefreshEnvironment,
+    SetMode(CalculationMode),
 }
 /// A structure that contains a raster (PNG) and vector (SVG) versions of a plot.
 /// The vector is used for displaying a plot in high-resolution.
@@ -1085,7 +1086,7 @@ impl SmartValue{
 }
 
 
-#[derive(Debug,Clone)]
+#[derive(Debug,Clone,PartialEq)]
 pub enum CalculationMode{
     Radian,
     Degree
