@@ -102,6 +102,17 @@ impl FunctionController {
             "stdev" => Function::Standard(Box::new(Self::stdev_f)),
             "mag" => Function::Standard(Box::new(Self::mag_f)),
             "angle" => Function::Standard(Box::new(Self::angle_f)),
+            "percenterror" => Function::Standard(Box::new(Self::percenterror_f)),
+            "permutations" => Function::Standard(Box::new(Self::permutations_f)),
+            "combinations" => Function::Standard(Box::new(Self::combinations_f)),
+            "floor" => Function::Standard(Box::new(Self::floor_f)),
+            "ceil" => Function::Standard(Box::new(Self::ceil_f)),
+            "round" => Function::Standard(Box::new(Self::round_f)),
+            "degtorad" => Function::Standard(Box::new(Self::degtorad_f)),
+            "radtodeg" => Function::Standard(Box::new(Self::radtodeg_f)),
+            "variance" => Function::Standard(Box::new(Self::variance_f)),
+            "fg" => Function::Standard(Box::new(Self::fg_f)),
+            "fe" => Function::Standard(Box::new(Self::fe_f)),
             "clear" => Function::Standard(Box::new(Self::clear_v)),
             "drop" => Function::Standard(Box::new(Self::drop_v)),
             func => {
@@ -520,6 +531,190 @@ impl FunctionController {
             }
         }
         return Err(Box::new(IncorrectNumberOfArgumentsError {name: "angle", found:input.len(), requires:2}))
+    }
+
+    pub fn percenterror_f (&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 2{
+            if let SmartValue::Number(means) = input[0]{
+                if let SmartValue::Number(theo) = input[1]{
+                    let percenterror = ((means.to_f64().unwrap() - theo.to_f64().unwrap()).abs() / (theo.to_f64().unwrap()).abs()) * 100.00;
+                    let percenterror = Decimal::from_f64(percenterror).unwrap();
+                    let value = SmartValue::Number(percenterror);
+                    return Ok(vec![value]);
+                }
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "percenterror", found:input.len(), requires:2}))
+    }
+
+    pub fn permutations_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 2{
+            if let SmartValue::Number(n) = input[0]{
+                if n.is_sign_negative(){ // ensures that the number cannot be negative
+                    return Err(Box::new(NegativeNumberError{}))
+                }
+                if let SmartValue::Number(r) = input[1]{
+                    if (n-r).is_sign_negative(){ // ensures that the number cannot be negative
+                        return Err(Box::new(NegativeNumberError{}))
+                    }
+                    let permutation = statrs::function::gamma::gamma(n.to_f64().unwrap()+1.0) / statrs::function::gamma::gamma((n-r).to_f64().unwrap()+1.0);
+                    let permutation = Decimal::from_f64(permutation.round()).unwrap();
+                    let value = SmartValue::Number(permutation);
+                    return Ok(vec![value]);
+                }
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "permutations", found:input.len(), requires:2}))
+    }
+
+    pub fn combinations_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 2{
+            if let SmartValue::Number(n) = input[0]{
+                if n.is_sign_negative(){ // ensures that the number cannot be negative
+                    return Err(Box::new(NegativeNumberError{}))
+                }
+                if let SmartValue::Number(r) = input[1]{
+                    if (n-r).is_sign_negative(){ // ensures that the number cannot be negative
+                        return Err(Box::new(NegativeNumberError{}))
+                    }
+                    if r.is_sign_negative(){
+                        return Err(Box::new(NegativeNumberError{}))
+                    }
+                    let combinations = statrs::function::gamma::gamma(n.to_f64().unwrap()+1.0) / (statrs::function::gamma::gamma((r).to_f64().unwrap()+1.0) * statrs::function::gamma::gamma((n-r).to_f64().unwrap()+1.0));
+                    let combinations = Decimal::from_f64(combinations.round()).unwrap();
+                    let value = SmartValue::Number(combinations);
+                    return Ok(vec![value]);
+                }
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "combinations", found:input.len(), requires:2}))
+    }
+
+    pub fn floor_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 1{
+            if let SmartValue::Number(n) = input[0]{
+                let floor = n.to_f64().unwrap().floor();
+                let floor = Decimal::from_f64(floor).unwrap();
+                let value = SmartValue::Number(floor);
+                return Ok(vec![value])
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "floor", found:input.len(), requires:1}))
+    }
+
+    pub fn ceil_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 1{
+            if let SmartValue::Number(n) = input[0]{
+                let ceil = n.to_f64().unwrap().ceil();
+                let ceil = Decimal::from_f64(ceil).unwrap();
+                let value = SmartValue::Number(ceil);
+                return Ok(vec![value])
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "ceil", found:input.len(), requires:1}))
+    }
+
+    pub fn round_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 1{
+            if let SmartValue::Number(n) = input[0]{
+                let round = n.to_f64().unwrap().round();
+                let round = Decimal::from_f64(round).unwrap();
+                let value = SmartValue::Number(round);
+                return Ok(vec![value])
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "round", found:input.len(), requires:1}))
+    }
+
+    pub fn degtorad_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 1{
+            if let SmartValue::Number(n) = input[0]{
+                let deg2rad = n.to_f64().unwrap() * ((103993.0/33102.0)/180.0);
+                let deg2rad = Decimal::from_f64(deg2rad).unwrap();
+                let value = SmartValue::Number(deg2rad);
+                return Ok(vec![value])
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "deg2rad", found:input.len(), requires:1}))
+    }
+
+    pub fn radtodeg_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 1{
+            if let SmartValue::Number(n) = input[0]{
+                let rad2deg = n.to_f64().unwrap() * (180.0/(103993.0/33102.0));
+                let rad2deg = Decimal::from_f64(rad2deg).unwrap();
+                let value = SmartValue::Number(rad2deg);
+                return Ok(vec![value])
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "rad2deg", found:input.len(), requires:1}))
+    }
+    pub fn variance_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        let size = Decimal::from_usize(input.len()).unwrap();
+        let copy = input.clone();
+        if input.len() != 0{
+            let mut avg = Decimal::from(0);
+            let mut val = Decimal::from(0);
+            for i in input{
+                if let SmartValue::Number(number) = i{
+                    avg += number.div(size);
+                }
+            }
+            for  i in copy{
+                if let SmartValue::Number(number) = i{
+                    val += (number*number) - (Decimal::from(2)*(number*avg)) + (avg * avg);
+                }
+            }
+            let var = SmartValue::Number(Decimal::from_f64((val/size).to_f64().unwrap()).unwrap());
+            return Ok(vec![var]);
+        }
+        return Err(Box::new(TypeMismatchError{}))
+    }
+
+    pub fn fg_f (&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{ // the force of gravity
+        if input.len() == 3{
+            if let SmartValue::Number(m1) = input[0]{
+                if m1.is_sign_negative(){ // ensures that the number cannot be negative
+                    return Err(Box::new(NegativeNumberError{}))
+                }
+                if let SmartValue::Number(m2) = input[1]{
+                    if m2.is_sign_negative(){ // ensures that the number cannot be negative
+                        return Err(Box::new(NegativeNumberError{}))
+                    }
+                    if let SmartValue::Number(r) = input[2]{
+                        if r.is_sign_negative(){ // ensures that the number cannot be negative
+                            return Err(Box::new(NegativeNumberError{}))
+                        }
+                        let G = 6.67 * (10.0_f64.powf(-11.00));
+                        let fg = (G * m1.to_f64().unwrap()*m2.to_f64().unwrap()) / (r.to_f64().unwrap().powf(2.00));
+                        let fg = Decimal::from_f64(fg).unwrap();
+                        let value = SmartValue::Number(fg);
+                        return Ok(vec![value])
+                    }
+                }
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "fg", found:input.len(), requires:3}))
+    }
+
+    pub fn fe_f (&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{ // electrostatic force
+        if input.len() == 3{
+            if let SmartValue::Number(q1) = input[0]{
+                if let SmartValue::Number(q2) = input[1]{
+                    if let SmartValue::Number(d) = input[2]{
+                        if d.is_sign_negative(){ // ensures that the number cannot be negative
+                            return Err(Box::new(NegativeNumberError{}))
+                        }
+                        let k = 8.987 * (10.0_f64.powf(9.0));
+                        let fe = (k * q1.to_f64().unwrap().abs()*q2.to_f64().unwrap().abs()) / (d.to_f64().unwrap().powf(2.00));
+                        let fe = Decimal::from_f64(fe).unwrap();
+                        let value = SmartValue::Number(fe);
+                        return Ok(vec![value])
+                    }
+                }
+            }
+        }
+        return Err(Box::new(IncorrectNumberOfArgumentsError{name: "fe", found:input.len(), requires:3}))
     }
 }
 
