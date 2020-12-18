@@ -1,5 +1,5 @@
-use std::ops::Deref;
-use crate::rcas_lib::{composer, calculate, Wrapper, RCas, SmartValue, QueryResult};
+use std::ops::{Deref, BitOr};
+use crate::rcas_lib::{Wrapper, RCas, SmartValue, QueryResult, Command};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
 use crate::rcas_gui::{Shell, EnvironmentTable, PlotViewer, MatrixView};
@@ -7,7 +7,8 @@ use fltk::{*, app, app::App, text::*, window::*, group::Tabs, group::Group, fram
 use std::time::Instant;
 use std::collections::{HashMap, HashSet};
 use fltk::menu::MenuItem;
-use fltk::image::PngImage;
+use fltk::image::{PngImage, SvgImage};
+use glu_sys::*;
 use std::env;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -18,11 +19,13 @@ use std::sync::Mutex;
 use fltk::app::event_key;
 use fltk::table::Table;
 use std::any::Any;
+use crate::data::BakedData;
 
 mod rcas_lib;
 mod rcas_functions;
 mod rcas_gui;
 mod data;
+mod rcas_constants;
 
 
 fn main() {
@@ -47,21 +50,16 @@ fn main() {
     let mut shell = Shell::new(5,5,490,790);
     let mut environment = EnvironmentTable::new(500, 5, 500, 407, "Environment");
     let mut plot_viewer = PlotViewer::new(500, 450, 500, 333, "Plot Viewer");
-    let mut cas = RCas::new();
-
+    let mut rcas = Rc::from(RefCell::from(RCas::new())); // a shareable RCas object :)
     let mut last_window_size:(i32, i32) = (window.width(), window.height());
 
     //let mut controller = GUIController::new();
 
     window.make_resizable(true);
+    window.set_icon(Some(SvgImage::from_data(BakedData::get_icon_svg()).unwrap())); // The icon for Rcas :)
     window.end();
     window.show();
 
-    //this should be removed. It is only for testing purposes
-    environment.add_type("ans", "Matrix");
-    environment.add_type("A", "21");
-    environment.add_type("F", "Function");
-    //end of testing
 
     let mut plot_viewer_clone = plot_viewer.clone();
     let plot_viewer = Rc::from(RefCell::from(plot_viewer));
@@ -121,37 +119,64 @@ fn main() {
         }
     });
 
+
     let mut controlled = false;
     let pvc = plot_viewer.clone(); // a nice reference to the plot viewer
+    let cas = rcas.clone();
     let mut shell_clone = shell.clone();
+    let mut enviro = environment.clone();
     shell_clone.handle( move |ev:Event| {
         match ev{
             Event::KeyDown => match app::event_key(){ // gets a keypress
                 Key::Enter | Key::KPEnter => {
                     let mut pvc = pvc.borrow_mut(); // Gets a mutable reference to the PlotViewer
+                    let mut cas = cas.borrow_mut(); // Gets a mutable reference to cas
+                    let mut rcas_environment = cas.get_environment(); // Gets the internal rcas environment
 
-                    shell.insert_normal("\n"); // newline character
                     //let now = Instant::now();
-                    let arg = &shell.clone().query;
-                    let result = cas.query(arg); // gets the result
+                    let result = cas.query(&shell.query); // gets the result
                     //println!("QUERY DURATION: {} µs", now.elapsed().as_micros());
+
                     let mut answer = String::new();
                     match result{
-                        QueryResult::Simple(result) => {answer = result},
+                        QueryResult::Simple(result) => {
+                            answer = result;
+                        },
                         QueryResult::Error(err) => {
                             shell.append_error(&err);
                             answer = "".to_string(); // there is no answer
                             fltk::dialog::beep(fltk::dialog::BeepType::Error); // a nice beep to show that you did something wrong
+                            //shell.insert_normal("\n"); // newline character
                         },
+                        QueryResult::Execute(cmd) => { // Execute commands that affect the GUI here.
+                            match cmd{
+                                Command::ClearScreen => shell.clear(),
+                                Command::RefreshEnvironment => shell.insert_normal("\n"),
+                                Command::SetMode(mode) => {
+                                    shell.set_calculation_mode(mode);
+                                    shell.insert_normal("\n")
+                                }
+                                _ => {}
+                            }
+
+                        },
+                        QueryResult::Assign(_assigned) =>{
+                            shell.insert_normal("\n");
+                            enviro.add_type("test", "testy");
+                        }
                         _ => {}
                     }
                     pvc.begin();
-                    pvc.add_test_img_tab("OOGA", arg); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
+                    pvc.add_test_img_tab("TEST"); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
                     pvc.redraw();
                     pvc.end();
 
-                    shell.append_answer(&format!("{}\n", answer)); // appends the result to the shell
-                    shell.append_mode(&shell.mode.to_string());
+                    enviro.update_table(rcas_environment);
+
+                    if answer.len() != 0{
+                        shell.append_answer(&format!("{}\n", answer)); // appends the result to the shell
+                    }
+                    shell.append_mode();
                     shell.renew_query(); // clears the current query and puts its value into history
 
                     true
@@ -168,20 +193,14 @@ fn main() {
                     }
                 },
                 Key::Up => { // Goes up the entries
-                    let len = shell.text().len() as u32;
-                    let query_len = shell.query.len() as u32;
-                    shell.buffer().unwrap().remove(len-query_len, len);
-                    shell.query.clear();
+                    shell.remove_query();
                     let text = shell.older_history();
                     shell.insert_normal(&*text);
                     shell.query = text;
                     true
                 },
                 Key::Down => { // goes down the entries
-                    let len = shell.text().len() as u32;
-                    let query_len = shell.query.len() as u32;
-                    shell.buffer().unwrap().remove(len-query_len, len);
-                    shell.query.clear();
+                    shell.remove_query();
                     let text = shell.newer_history();
                     shell.insert_normal(&*text);
                     shell.query = text;
@@ -219,12 +238,17 @@ fn main() {
                     true
                 }
             },
+            Event::Push => { // Fixes the bug that would otherwise occur if the cursor clicked somewhere else in the shell
+                if shell.insert_position() != shell.cursor_pos{
+                    shell.fix_cursor();
+                }
+                true
+            }
             _ => false, //any other event that is not needed
         }
     });
 
-    shell_clone.set_callback(|| println!("EEE"));
-
+    let cas = rcas.clone();
     let mut environment_clone = environment.clone();
     environment_clone.handle(move |ev:Event|{
         match ev{
@@ -255,9 +279,14 @@ fn main() {
                     let (x, y) = app::event_coords(); // gets the coordinates of the click
                     if let Some(row) = environment.get_selected(){ //gets the selected row
                         if let Some(choice) = item.popup(x,y){ //tooltip pops up and the choice selected gets recieved
-                            //TODO - IMPLEMENT EDIT AND REMOVE
+                            //TODO - IMPLEMENT EDIT
                             match &*choice.label().unwrap(){
-                                "Remove" => environment.remove_row(row),
+                                "Remove" => {
+                                    let mut cas = cas.borrow_mut();
+                                    let rcas_environment = cas.get_environment();
+                                    environment.remove_row(row, rcas_environment);
+
+                                },
                                 _ => println!("NOT IMPLEMENTED YET")
                             }
                         }
@@ -269,9 +298,13 @@ fn main() {
         }
     });
 
-    //let window_c = window.clone();
-    //let mut window_c = window_c.borrow_mut();
-    //window_c.handle(move |ev:Event| {false});
+    // let window_c = window.clone();
+    // let mut window_c = window_c.borrow_mut();
+    // window_c.handle(move |ev:Event| match ev {
+    //     ev => {
+    //
+    //     }
+    // });
 
     app.run().unwrap();
 }

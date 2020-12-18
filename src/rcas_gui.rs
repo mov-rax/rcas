@@ -1,6 +1,5 @@
 use fltk::{app, app::App, text::*, window::*, table::*};
 //use std::ops::{Deref, DerefMut};
-use crate::rcas_lib;
 use crate::rcas_lib::{*, RCas, CalculationMode};
 use std::ops::{Deref, DerefMut, Range};
 use fltk::browser::{BrowserScrollbar, Browser, MultiBrowser, FileBrowser};
@@ -11,18 +10,14 @@ use std::collections::HashMap;
 //use fltk_sys::widget::Fl_Widget;
 use fltk::menu::MenuItem;
 use fltk::dialog::{FileDialog, FileDialogType, FileDialogOptions, HelpDialog, BeepType};
-use std::fs::{File, Metadata};
+use std::fs::File;
 use std::io::Write;
-extern crate plotters;
-//use plotters::prelude::*;
-use plotters::series::*;
-use plotters::evcxr::SVGWrapper;
 use crate::data::BakedData;
 use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
 use std::any::Any;
 use fltk::input::{Input, FloatInput};
-use std::convert::TryInto;
+use fxhash::FxHashMap;
 
 const COLOR_SELECTED_FILL:u32 = 0xB7C6E0;
 const COLOR_SELECTED_BORDER:u32 = 0x0F0F0F;
@@ -34,9 +29,10 @@ pub(crate) struct Shell{
     sbuf: TextBuffer,
     pub(crate) mode: CalculationMode,
     pub(crate) query: String,
-    history:Vec<String>,
-    history_pos:usize,
-    root_query_pos:u32,
+    history:Vec<String>, // holds the query history
+    history_pos:usize, // location in history
+    root_query_pos:u32, // holds root, or rather, the lowest index that is editable by the user
+    pub( crate) cursor_pos:u32, //holds position of cursor
 }
 
 pub trait AsTerm {
@@ -106,10 +102,11 @@ impl Shell{
             query: String::new(),
             history: Vec::new(),
             history_pos: 0,
-            root_query_pos: 0
+            root_query_pos: 0,
+            cursor_pos: 0,
         };
 
-        shell.append_mode(&shell.mode.to_string());
+        shell.append_mode();
         shell
     }
 
@@ -118,30 +115,44 @@ impl Shell{
     }
 
     pub fn append(&mut self, txt: &str) {
-        self.term.append(txt)
+        self.term.append(txt);
+        self.cursor_pos = self.term.insert_position();
     }
 
-    pub fn append_mode(&mut self, text: &str) {
-        self.term.append(text);
-        self.sbuf.append(&"A".repeat(text.len())); // uses the A style (the first one)
+    pub fn remove_query(&mut self){
+        let len = self.text().len() as u32;
+        let query_len = self.query.len() as u32;
+        self.cursor_pos = self.term.insert_position();
+        self.buffer().unwrap().remove(len-query_len, len);
+        self.sbuf.remove(len-query_len, len);
+        self.query.clear();
+    }
+
+    pub fn append_mode(&mut self) {
+        self.term.append(&self.mode.to_string());
+        self.sbuf.append(&"A".repeat(self.mode.to_string().len())); // uses the A style (the first one)
         self.root_query_pos = self.term.text().len() as u32; // saves the position where the cursor is after printing out the mode
-        println!("CURRENT QUERY POS: {}", self.root_query_pos+1);
     }
 
     pub fn append_error(&mut self, text: &str){
+        self.term.append("\n");
         self.term.append(text);
-        self.sbuf.append(&"B".repeat(text.len())); // uses the B style (the second one)
+        self.term.append("\n");
+        self.sbuf.append(&"B".repeat(text.len()+2)); // uses the B style (the second one)
+        self.cursor_pos = self.insert_position();
     }
 
     pub fn insert_normal(&mut self, text: &str) {
         self.term.insert(text);
         //self.term.append(text);
         self.sbuf.insert(self.term.insert_position(), &"C".repeat(text.len()));
+        self.cursor_pos = self.term.insert_position();
     }
 
     pub fn append_answer(&mut self, text: &str) {
+        self.term.append("\n");
         self.term.append(text);
-        self.sbuf.append(&"D".repeat(text.len()));
+        self.sbuf.append(&"D".repeat(text.len()+1));
     }
 
     /// Removes a character at the cursor
@@ -152,6 +163,7 @@ impl Shell{
         let pos:u32 = self.term.insert_position();
         self.buffer().unwrap().remove(pos - 1, pos);
         self.sbuf.remove(pos - 1, pos);
+        self.cursor_pos = self.term.insert_position();
     }
 
     pub fn renew_query(&mut self){
@@ -159,8 +171,8 @@ impl Shell{
         self.history.push(query_copy);
         self.query.clear();
         self.history_pos = self.history.len();
+        self.cursor_pos = self.term.insert_position();
     }
-
 
     pub fn older_history(&mut self) -> String{
         if self.history_pos > 0{
@@ -190,6 +202,7 @@ impl Shell{
             };
             println!("{}", result);
         }
+        self.cursor_pos = self.term.insert_position();
     }
 
     /// Also doesn't work for some reason
@@ -198,11 +211,22 @@ impl Shell{
             self.term.move_right();
             println!("right");
         }
+        self.cursor_pos = self.term.insert_position();
     }
 
     /// Sets the Shell's calculation mode.
     pub fn set_calculation_mode(&mut self, mode:CalculationMode) {
         self.mode = mode;
+    }
+
+    pub fn clear(&mut self){
+        self.buffer().unwrap().set_text(""); //clears the shell
+        self.sbuf.set_text(""); // clears the style buffer
+    }
+
+    pub fn fix_cursor(&mut self){
+        let pos = self.cursor_pos;
+        self.set_insert_position(pos);
     }
 }
 
@@ -217,35 +241,39 @@ impl DerefMut for Shell{
 #[derive(Debug, Clone)]
 pub( crate) struct EnvironmentTable{
     env: MultiBrowser,
-    pub lines: u32
+    pub lines: Rc<RefCell<u32>>
 }
 
 impl EnvironmentTable{
     pub fn new(x:i32, y:i32, width:i32, height:i32, title:&str) -> EnvironmentTable{
         let env = MultiBrowser::new(x,y,width,height,title);
-        EnvironmentTable {env, lines:0}
+        EnvironmentTable {env, lines:Rc::from(RefCell::from(0))}
     }
 
     /// Adds an item onto the Environment Table with a given identifier.
     pub(crate) fn add(&mut self, id:String){
         self.env.add(&id);
-        self.lines += 1;
+        let mut lines = self.lines.borrow_mut();
+        *lines += 1;
     }
 
     pub fn add_type(&mut self, id:&str, _type:&str){
-        let tabs = (0..self.env.width()).step_by(45).map(|_| '\t').collect::<String>();
+        //let tabs = (0..self.env.width()).step_by(45).map(|_| '\t').collect::<String>();
+        let tabs = " | ".to_string();
         //let separator = "\t|\t";
         let mut string = id.to_string();
         string.push_str(&tabs);
         //string.push_str(separator);
         string.push_str(_type);
         self.env.add(&string);
-        self.lines += 1;
+        let mut lines = self.lines.borrow_mut();
+        *lines += 1;
     }
 
     /// Safely removes an item on the Environment Table when given its identifier.
     pub fn remove(&mut self, id:String){
-        for i in 0..self.lines{
+        let mut lines = self.lines.borrow_mut();
+        for i in 0..*lines{
             let text = self.text(i+1);
             if let Some(text) = text{
                 if text.contains(&id){
@@ -253,16 +281,23 @@ impl EnvironmentTable{
                 }
             }
         }
-        self.lines -= 1;
+        *lines -= 1;
     }
     /// Removes a row given a number. Row starts at 1.
-    pub fn remove_row(&mut self, row:u32){
-        self.env.remove(row);
+    pub fn remove_row(&mut self, row:u32, rcas_environment: Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>){
+        if let Some(text) = self.env.text(row){
+            let mut rcas_environment = rcas_environment.borrow_mut();
+            let text:String = text;
+            let text = text.chars().take_while(|c| *c != ' ').collect::<String>();
+            rcas_environment.remove(&*text);
+            self.env.remove(row);
+        }
     }
 
     /// Returns the selected Row (if any selected)
     pub fn get_selected(&self) -> Option<u32>{
-        for i in 0..self.lines{
+        let lines = *self.lines.borrow();
+        for i in 0..lines{
             if self.selected(i+1){
                 return Some(i+1);
             }
@@ -270,7 +305,26 @@ impl EnvironmentTable{
         None
     }
 
+    pub fn clear_table(&mut self){
+        let mut lines = self.lines.borrow_mut();
+        self.env.clear();
+        *lines = 0;
+    }
 
+    pub fn update_table(&mut self, internal:Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>){
+        self.clear_table(); //clears the table of all values, and resets the line count back to 0
+        let internal = internal.borrow();
+        // this gets all of necessary information from the environment table
+        let values = internal.iter().filter_map(|(k,v)| {
+            let data_type = v.iter().map(|x| x.get_value()).collect::<String>();
+            Some((k.clone(), data_type))
+        }).collect::<Vec<(String,String)>>();
+        // adds each value that is in the internal environment table to the GUI
+        for (id, _type) in values{
+            self.add_type(&*id, &*_type);
+        }
+        self.env.sort();
+    }
 }
 
 impl Deref for EnvironmentTable{
@@ -303,24 +357,10 @@ impl PlotViewer{
         dummy.end();
     }
 
-    pub fn add_test_img_tab(&mut self, label:&str, arg:&str){
-        let f_svg = rcas_lib::f_query(arg);
-        let mut thedata = f_svg.evcxr_display(); /*edit the source for evcxr display in order to get it working*/
-        /*replace the evcxr_display() function on the source with this:
-
-        pub fn evcxr_display(&self) -> &str{
-	        let svg = self.0.as_str();
-            svg
-        }
-
-        I think you do cargo update once you modify the source, but I'm not sure
-
-        It worked fine for me when I did it on manjaro, but I tried it on a different OS and it was giving me trouble.
-        Maybe you can revert it back to the previous version?
-        */
+    pub fn add_test_img_tab(&mut self, label:&str){
         let (x, y) = self.get_base_coords_image();
         let mut dummy = self.gen_tab(label);
-        let mut img = fltk::image::SvgImage::from_data(thedata).unwrap();
+        let mut img = fltk::image::SvgImage::from_data(BakedData::get_test_svg()).unwrap();
         //let mut img = fltk::image::PngImage::from_data(&BakedData::get_test_png()).unwrap();
         img.scale(dummy.width(), ((dummy.height() as f32)*0.93).round() as i32, true, true);
         self.img_locations.insert(String::from(label), (dummy.x(), dummy.y(), dummy.width(), ((dummy.height() as f32)*0.93).round() as i32));
@@ -410,6 +450,7 @@ impl PlotViewer{
                             println!("FILENAME:\t{:?}", dialog.filenames());
                             let path = dialog.filename().to_string_lossy().to_string();
 
+                            // TODO - THE BACKEND NEEDS TO BE FLESHED OUT FIRST. THIS CANNOT BE FINISHED MADE UNTIL THEN.
                             // let mut opt = usvg::Options::default();
                             // opt.path = Some(dialog.filename().clone());
                             // opt.fontdb.load_system_fonts();
