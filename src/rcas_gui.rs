@@ -1,22 +1,22 @@
-use fltk::{app, app::App, text::*, window::*, table::*};
+use fltk::{app, text::*, window::*, table::*};
 //use std::ops::{Deref, DerefMut};
 use crate::rcas_lib::{*, RCas, CalculationMode};
 use std::ops::{Deref, DerefMut, Range};
-use fltk::browser::{BrowserScrollbar, Browser, MultiBrowser, FileBrowser};
+use fltk::browser::{MultiBrowser};
 use fltk::group::{Tabs, Group};
 use fltk::image::{PngImage as FltkImage, SvgImage};
 use fltk::frame::Frame;
 use std::collections::HashMap;
 //use fltk_sys::widget::Fl_Widget;
-use fltk::menu::MenuItem;
-use fltk::dialog::{FileDialog, FileDialogType, FileDialogOptions, HelpDialog, BeepType};
-use std::fs::File;
-use std::io::Write;
+
+use fltk::dialog::{FileDialog, FileDialogType, FileDialogOptions, BeepType};
+
+
 use crate::data::BakedData;
 use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
-use std::any::Any;
-use fltk::input::{Input, FloatInput};
+
+use fltk::input::{FloatInput};
 use fxhash::FxHashMap;
 
 const COLOR_SELECTED_FILL:u32 = 0xB7C6E0;

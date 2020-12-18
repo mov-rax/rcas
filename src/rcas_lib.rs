@@ -1,19 +1,19 @@
 use rust_decimal::*;
-use std::io::ErrorKind;
+
 use std::fmt;
 use crate::rcas_lib::SmartValue::Operator;
 use std::str::FromStr;
 use std::error;
-use rust_decimal::prelude::ToPrimitive;
-use std::ptr::replace;
+
+
 use std::ops::Deref;
 use crate::rcas_functions;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::time::Instant;
-use std::fmt::{Display, Debug, Formatter};
+use std::fmt::{Debug, Formatter};
 use fxhash::FxHashMap;
-use nalgebra;
+
 use crate::rcas_functions::{FunctionController, Function};
 use crate::rcas_constants::ConstantController;
 //constants
@@ -202,10 +202,10 @@ impl RCas{
                                 id: identifier.clone(),
                                 data: DataType::Function
                             }),
-                            SmartValue::Text(identifier) => QueryResult::Assign((QueryAssign {
+                            SmartValue::Text(identifier) => QueryResult::Assign(QueryAssign {
                                 id: identifier.clone(),
                                 data: DataType::Function
-                            })),
+                            }),
                             _ => QueryResult::Error("ASSIGNMENT NOT IMPLEMENTED".to_string()),
                         }
                     }
@@ -244,7 +244,7 @@ impl RCas{
             info = format!("FORMATTING ERROR detected at character {}.", &error.position);
         }
 
-        if let Some(error) = error.downcast_ref::<GenericError>(){
+        if let Some(_) = error.downcast_ref::<GenericError>(){
             info = format!("GENERIC ERROR detected. Please report what was done for this \
                     to appear. Thanks!");
         }
@@ -718,7 +718,7 @@ impl RCas{
                         }
                     }
                 };
-                let range = (last_comma_location..count); // a range of important information
+                let range = last_comma_location..count; // a range of important information
                 let range_len = range.len();
                 self.calculate(&mut input[range.clone()].to_vec());
                 comma_remove(input); // I tried removing it using math but I guess I couldn't figure out how to make it work consistently

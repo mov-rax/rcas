@@ -13,11 +13,10 @@ clipboard = "0.5.0"
 statrs = "0.13.0"
 nalgebra = "0.23.1"
 fxhash = "0.2.1"
-glu-sys = "0.1.4"
+
 
 [dependencies.fltk]
 version = "0.11.6"
-features = ["enable-glwindow"]
 
 
 [profile.release]

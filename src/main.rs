@@ -1,24 +1,14 @@
-use std::ops::{Deref, BitOr};
-use crate::rcas_lib::{Wrapper, RCas, SmartValue, QueryResult, Command};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
+use crate::rcas_lib::{RCas, QueryResult, Command};
+
 use crate::rcas_gui::{Shell, EnvironmentTable, PlotViewer, MatrixView};
-use fltk::{*, app, app::App, text::*, window::*, group::Tabs, group::Group, frame::Frame};
+use fltk::{*, app, app::App, window::*};
 use std::time::Instant;
-use std::collections::{HashMap, HashSet};
 use fltk::menu::MenuItem;
 use fltk::image::{PngImage, SvgImage};
-use glu_sys::*;
-use std::env;
 use std::rc::Rc;
 use std::cell::RefCell;
 use clipboard::{ClipboardProvider, ClipboardContext};
 
-use std::borrow::Borrow;
-use std::sync::Mutex;
-use fltk::app::event_key;
-use fltk::table::Table;
-use std::any::Any;
 use crate::data::BakedData;
 
 mod rcas_lib;
@@ -30,18 +20,6 @@ mod rcas_constants;
 
 fn main() {
 
-    //let expression = "4(3-1.5*(6+4/10.5)*3)+4";
-    //let cas = rcas_lib::RCas::new();
-    //let result = cas.query(expression);
-    //println!("{}", result);
-    //Comment by Mario
-
-    // let exp = 2.7182818284590452353602874713527;
-    // let 2(exp);
-    //println!("{}", result);
-
-    //let name_mario= String::from("Mario Vega");
-
     let app = App::default().with_scheme(app::Scheme::Gtk);
     let mut window:DoubleWindow = DoubleWindow::default() //maybe making it a double-buffered window will help?
         .with_size(1005, 800)
@@ -52,8 +30,6 @@ fn main() {
     let mut plot_viewer = PlotViewer::new(500, 450, 500, 333, "Plot Viewer");
     let mut rcas = Rc::from(RefCell::from(RCas::new())); // a shareable RCas object :)
     let mut last_window_size:(i32, i32) = (window.width(), window.height());
-
-    //let mut controller = GUIController::new();
 
     window.make_resizable(true);
     window.set_icon(Some(SvgImage::from_data(BakedData::get_icon_svg()).unwrap())); // The icon for Rcas :)
@@ -183,10 +159,7 @@ fn main() {
                 },
                 Key::BackSpace => { // BACKSPACE TO REMOVE CHARACTER FROM SHELL AND THE QUERY
                     if !shell.query.is_empty(){
-                        //let len = shell.text().len() as u32;
                         shell.remove_at_cursor();
-                        //shell.buffer().unwrap().remove(len - 1, len); // removes the last character in the buffer
-                        //shell.query.pop().unwrap(); // removes the last character from the query
                         true
                     } else {
                         false
@@ -268,7 +241,6 @@ fn main() {
                             },
                             _ => false,
                         });
-
                          // TODO - IMPLEMENT EDITOR HERE
                     }
 
@@ -297,14 +269,6 @@ fn main() {
             _ => false
         }
     });
-
-    // let window_c = window.clone();
-    // let mut window_c = window_c.borrow_mut();
-    // window_c.handle(move |ev:Event| match ev {
-    //     ev => {
-    //
-    //     }
-    // });
 
     app.run().unwrap();
 }
