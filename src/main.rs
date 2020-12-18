@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Deref, BitOr};
 use crate::rcas_lib::{Wrapper, RCas, SmartValue, QueryResult, Command};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromStr, ToPrimitive, FromPrimitive};
@@ -7,7 +7,8 @@ use fltk::{*, app, app::App, text::*, window::*, group::Tabs, group::Group, fram
 use std::time::Instant;
 use std::collections::{HashMap, HashSet};
 use fltk::menu::MenuItem;
-use fltk::image::PngImage;
+use fltk::image::{PngImage, SvgImage};
+use glu_sys::*;
 use std::env;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -18,6 +19,7 @@ use std::sync::Mutex;
 use fltk::app::event_key;
 use fltk::table::Table;
 use std::any::Any;
+use crate::data::BakedData;
 
 mod rcas_lib;
 mod rcas_functions;
@@ -54,6 +56,7 @@ fn main() {
     //let mut controller = GUIController::new();
 
     window.make_resizable(true);
+    window.set_icon(Some(SvgImage::from_data(BakedData::get_icon_svg()).unwrap())); // The icon for Rcas :)
     window.end();
     window.show();
 
@@ -164,7 +167,7 @@ fn main() {
                         _ => {}
                     }
                     pvc.begin();
-                    pvc.add_test_img_tab("OOGA"); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
+                    pvc.add_test_img_tab("TEST"); // TODO - THIS SHOULD BE CHANGED TO AN ACTUAL PLOT
                     pvc.redraw();
                     pvc.end();
 
@@ -235,6 +238,12 @@ fn main() {
                     true
                 }
             },
+            Event::Push => { // Fixes the bug that would otherwise occur if the cursor clicked somewhere else in the shell
+                if shell.insert_position() != shell.cursor_pos{
+                    shell.fix_cursor();
+                }
+                true
+            }
             _ => false, //any other event that is not needed
         }
     });
@@ -289,9 +298,13 @@ fn main() {
         }
     });
 
-    //let window_c = window.clone();
-    //let mut window_c = window_c.borrow_mut();
-    //window_c.handle(move |ev:Event| {false});
+    // let window_c = window.clone();
+    // let mut window_c = window_c.borrow_mut();
+    // window_c.handle(move |ev:Event| match ev {
+    //     ev => {
+    //
+    //     }
+    // });
 
     app.run().unwrap();
 }

@@ -315,7 +315,7 @@ impl RCas{
         let mut environment = self.environment.borrow_mut(); // gets a mutable reference to the environment.
         let mut temp:Vec<SmartValue> = Vec::with_capacity(30); //temp value that will be returned
         let mut buf:Vec<char> = Vec::new(); //buffer for number building
-        let mut mat_buf:Vec<Vec<SmartValue>> = Vec::new(); //buffer for matrix building
+        let mut mat_buf:Vec<SmartValue> = Vec::new(); //buffer for matrix building
         let mut counter = 0; //used to keep track of parentheses
         let mut number = false; //used to keep track of number building
         let mut position = 0; //used to keep track of error position
@@ -330,6 +330,7 @@ impl RCas{
         let mut building_matrix = false; //used to keep track of matrix-building
         let mut rows = 0;
         let mut cols = 0;
+        let mut matrix_marker = 0;
         let assignment = is_assignment(&*input); // checks to see if this input is an assignment :)
 
         if let Some((_, index, params)) = &assignment{
@@ -361,7 +362,35 @@ impl RCas{
             // }
             //
             // if nth == ' ' && building_matrix{
-            //     let foo = buf.iter().collect::<String>();
+            //     let info = (&temp[matrix_marker..]).to_vec().clone();
+            //     for _ in 0..info.len(){
+            //         temp.pop();
+            //     }
+            //     let composed = Self::composer(info);
+            //     let solved = self.recurse_solve(composed);
+            //     let solved = solved[0].clone();
+            //     mat_buf.push(solved);
+            //     matrix_marker = temp.len();
+            //     buf.clear();
+            //     number = false;
+            //     dec = false;
+            //     operator = false;
+            //     continue;
+            // }
+            //
+            // if nth == ';' && building_matrix{
+            // if cols == 0{
+            //     cols = mat_buf.len();
+            // }
+            //     rows += 1;
+            //
+            // }
+            //
+            // if nth == ']'{
+            //     counter -= 1;
+            //     if counter == 0{
+            //         building_matrix = false;
+            //     }
             // }
 
             if nth == r#"""#.chars().nth(0).unwrap(){ // double quotes
@@ -738,8 +767,8 @@ impl RCas{
                                 rcas_functions::Function::Standard(func) => {
                                     func(&mut self.function_controller, parameters.clone()) // Executes the function!!
                                 },
-                                rcas_functions::Function::Nil => { // Doesn't exist in standard functions, therefore it could be a user-defined function.
-                                    Err(Box::new(GenericError {})) // MUST BE REPLACED LATER.
+                                rcas_functions::Function::Nil => { // Function identifier does NOT exist.
+                                    Err(Box::new(GenericError {}))
                                 }
                             };
                             match value {

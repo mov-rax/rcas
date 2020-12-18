@@ -29,9 +29,10 @@ pub(crate) struct Shell{
     sbuf: TextBuffer,
     pub(crate) mode: CalculationMode,
     pub(crate) query: String,
-    history:Vec<String>,
-    history_pos:usize,
-    root_query_pos:u32,
+    history:Vec<String>, // holds the query history
+    history_pos:usize, // location in history
+    root_query_pos:u32, // holds root, or rather, the lowest index that is editable by the user
+    pub( crate) cursor_pos:u32, //holds position of cursor
 }
 
 pub trait AsTerm {
@@ -101,7 +102,8 @@ impl Shell{
             query: String::new(),
             history: Vec::new(),
             history_pos: 0,
-            root_query_pos: 0
+            root_query_pos: 0,
+            cursor_pos: 0,
         };
 
         shell.append_mode();
@@ -113,12 +115,14 @@ impl Shell{
     }
 
     pub fn append(&mut self, txt: &str) {
-        self.term.append(txt)
+        self.term.append(txt);
+        self.cursor_pos = self.term.insert_position();
     }
 
     pub fn remove_query(&mut self){
         let len = self.text().len() as u32;
         let query_len = self.query.len() as u32;
+        self.cursor_pos = self.term.insert_position();
         self.buffer().unwrap().remove(len-query_len, len);
         self.sbuf.remove(len-query_len, len);
         self.query.clear();
@@ -135,12 +139,14 @@ impl Shell{
         self.term.append(text);
         self.term.append("\n");
         self.sbuf.append(&"B".repeat(text.len()+2)); // uses the B style (the second one)
+        self.cursor_pos = self.insert_position();
     }
 
     pub fn insert_normal(&mut self, text: &str) {
         self.term.insert(text);
         //self.term.append(text);
         self.sbuf.insert(self.term.insert_position(), &"C".repeat(text.len()));
+        self.cursor_pos = self.term.insert_position();
     }
 
     pub fn append_answer(&mut self, text: &str) {
@@ -157,6 +163,7 @@ impl Shell{
         let pos:u32 = self.term.insert_position();
         self.buffer().unwrap().remove(pos - 1, pos);
         self.sbuf.remove(pos - 1, pos);
+        self.cursor_pos = self.term.insert_position();
     }
 
     pub fn renew_query(&mut self){
@@ -164,8 +171,8 @@ impl Shell{
         self.history.push(query_copy);
         self.query.clear();
         self.history_pos = self.history.len();
+        self.cursor_pos = self.term.insert_position();
     }
-
 
     pub fn older_history(&mut self) -> String{
         if self.history_pos > 0{
@@ -195,6 +202,7 @@ impl Shell{
             };
             println!("{}", result);
         }
+        self.cursor_pos = self.term.insert_position();
     }
 
     /// Also doesn't work for some reason
@@ -203,6 +211,7 @@ impl Shell{
             self.term.move_right();
             println!("right");
         }
+        self.cursor_pos = self.term.insert_position();
     }
 
     /// Sets the Shell's calculation mode.
@@ -213,6 +222,11 @@ impl Shell{
     pub fn clear(&mut self){
         self.buffer().unwrap().set_text(""); //clears the shell
         self.sbuf.set_text(""); // clears the style buffer
+    }
+
+    pub fn fix_cursor(&mut self){
+        let pos = self.cursor_pos;
+        self.set_insert_position(pos);
     }
 }
 
