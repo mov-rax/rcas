@@ -132,6 +132,7 @@ impl Shell{
         self.term.append(&self.mode.to_string());
         self.sbuf.append(&"A".repeat(self.mode.to_string().len())); // uses the A style (the first one)
         self.root_query_pos = self.term.text().len() as u32; // saves the position where the cursor is after printing out the mode
+        self.cursor_pos = self.insert_position();
     }
 
     pub fn append_error(&mut self, text: &str){
@@ -383,7 +384,7 @@ impl PlotViewer{
             }
             None
         }).collect(); // this iteration removes from the tabs vec the plot that is about to be removed.
-        app::delete_widget(self.value().unwrap());
+        app::delete_widget(unsafe {self.value().unwrap().into_widget::<Group>()});
         self.redraw();
     }
 

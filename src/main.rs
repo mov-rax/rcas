@@ -250,7 +250,7 @@ fn main() {
                     let mut item = MenuItem::new(&choices); //creates a new menu item
                     let (x, y) = app::event_coords(); // gets the coordinates of the click
                     if let Some(row) = environment.get_selected(){ //gets the selected row
-                        if let Some(choice) = item.popup(x,y){ //tooltip pops up and the choice selected gets recieved
+                        if let Some(choice) = item.popup(x,y){ //tooltip pops up and the choice selected gets received
                             //TODO - IMPLEMENT EDIT
                             match &*choice.label().unwrap(){
                                 "Remove" => {
