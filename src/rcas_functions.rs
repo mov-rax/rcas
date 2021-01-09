@@ -3,10 +3,10 @@
 
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{ToPrimitive, FromPrimitive};
-use std::any::Any;
-use std::fmt::Display;
-use std::error::Error;
-use std::fmt;
+
+
+
+
 use statrs;
 use crate::rcas_lib::{SmartValue, FormattingError, TypeMismatchError, IncorrectNumberOfArgumentsError, Command, NegativeNumberError, OverflowError, RCas, Wrapper, CalculationMode};
 use std::ops::Div;
@@ -575,7 +575,7 @@ impl FunctionController {
             let mut value = Decimal::from(0);
             for i in input{
                 if let SmartValue::Number(number) = i{
-                    value += (number*number);
+                    value += number*number;
                 }
             }
             return Ok(vec![SmartValue::Number(Decimal::from_f64(value.to_f64().unwrap().sqrt()).unwrap())])
