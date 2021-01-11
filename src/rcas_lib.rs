@@ -617,7 +617,7 @@ impl RCas{
                             operator = false;
                             position += 1;
                             buf.clear();
-                        }{
+                        } else {
                             return Err(Box::new(UnknownIdentifierError{position, identifier:foo.clone()}))
                         }
                     }
@@ -640,7 +640,7 @@ impl RCas{
                     } else if let Some(constant) = ConstantController::get(foo){
                         temp.push(constant);
                         buf.clear();
-                    }else {
+                    } else {
                         return Err(Box::new(UnknownIdentifierError{position, identifier:foo.clone()}))
                     }
                 }
