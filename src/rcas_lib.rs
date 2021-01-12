@@ -666,6 +666,10 @@ impl RCas{
                 position += 1;
             }
 
+            if nth == ':'{ // range-building operator
+
+            }
+
         }
         //now, at the end of the road, do some final checking.
         if operator{ //shouldn't be a lone operator at the end of some input
@@ -763,7 +767,7 @@ impl RCas{
 
                         if len == parameters.len(){
                             let function = self.function_controller.get(name.as_str()); // gets the function from its identifier
-                            let value:Result<Vec<SmartValue>, Box<dyn std::error::Error>> = match function{
+                            let value:Result<Vec<SmartValue>, Box<dyn std::error::Error>> = match function {
                                 rcas_functions::Function::Standard(func) => {
                                     func(&mut self.function_controller, parameters.clone()) // Executes the function!!
                                 },

@@ -117,7 +117,8 @@ impl FunctionController {
             "clear" => Function::Standard(Box::new(Self::clear_v)),
             "drop" => Function::Standard(Box::new(Self::drop_v)),
             "setmode" => Function::Standard(Box::new(Self::setmode_f)),
-            func => {
+            "typeof" => Function::Standard(Box::new(Self::type_of)),
+            func => { // Custom functions (user-defined)
                 let environment = self.environment.try_borrow();
                 if let Ok(environment) = environment{
                     if let Some(value) = environment.get(func){
@@ -141,6 +142,37 @@ impl FunctionController {
                     *dec = *dec * con;
                 }
             }
+        }
+    }
+
+    fn type_of(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
+        let mut result = String::new();
+        let mut set = false;
+        if let Some(val) = input.get(0){
+            result = match val{
+                SmartValue::Number(_) => String::from("Number"),
+                SmartValue::Text(_) => String::from("Text"),
+                SmartValue::Function(_) => String::from("Function"),
+                SmartValue::Cmd(_) => String::from("Cmd"),
+                SmartValue::Operator(_) => String::from("Operator"),
+                SmartValue::Variable(_) => String::from("Variable"),
+                SmartValue::Label(_,_) => String::from("Label"),
+                SmartValue::Comma => String::from("Comma"),
+                SmartValue::Error(_) => String::from("Error"),
+                SmartValue::Range(_,_,_) => String::from("Range"),
+                SmartValue::Placeholder(_) => String::from("Placeholder"),
+                _ => String::from("Unknown"),
+            };
+            set = true;
+        }
+        return if set {
+            Ok(vec![SmartValue::Text(result)])
+        } else {
+            Err(Box::new(IncorrectNumberOfArgumentsError{
+                name: "typeof",
+                found: 0,
+                requires: 1
+            }))
         }
     }
 
