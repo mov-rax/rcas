@@ -745,7 +745,9 @@ impl RCas{
                     if let SmartValue::Number(lower) = lower_bound{
                         if let SmartValue::Number(step) = step_upper_bound.0{
                             if let SmartValue::Number(upper) = step_upper_bound.1{
-                                result = Some(SmartValue::Range(lower,step,upper));
+                                if step > Decimal::from(0){ // Only positive, nonzero step is allowed
+                                    result = Some(SmartValue::Range(lower,step,upper));
+                                }
                             }
                         }
                     }
