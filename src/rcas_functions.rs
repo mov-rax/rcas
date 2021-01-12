@@ -117,6 +117,7 @@ impl FunctionController {
             "clear" => Function::Standard(Box::new(Self::clear_v)),
             "drop" => Function::Standard(Box::new(Self::drop_v)),
             "setmode" => Function::Standard(Box::new(Self::setmode_f)),
+            "expand" => Function::Standard(Box::new(Self::expand_f)),
             "typeof" => Function::Standard(Box::new(Self::type_of)),
             func => { // Custom functions (user-defined)
                 let environment = self.environment.try_borrow();
@@ -187,6 +188,31 @@ impl FunctionController {
                 }
             }
         }
+    }
+
+    pub fn expand_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        let mut expanded = vec![];
+        for value in input{
+            if let SmartValue::Range(bound1,step,bound2) = value{
+                if bound1 < bound2{
+                    let mut count = bound1;
+                    while count <= bound2{
+                        expanded.push(SmartValue::Number(count));
+                        count += step;
+                    }
+                }
+                if bound1 > bound2{
+                    let mut count = bound1;
+                    while count >= bound2{
+                        expanded.push(SmartValue::Number(count));
+                        count -= step;
+                    }
+                }
+            } else {
+                return Err(Box::new(TypeMismatchError{}))
+            }
+        }
+        Ok(expanded)
     }
 
     pub fn setmode_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
@@ -346,6 +372,20 @@ impl FunctionController {
             for i in input{
                 if let SmartValue::Number(number) = i{
                     sum += number;
+                } else if let SmartValue::Range(bound1,step,bound2) = i{
+                    if bound1 < bound2{ // small to big
+                        let mut count = bound1;
+                        while count <= bound2{
+                            sum += count;
+                            count += step;
+                        }
+                    } else { // big to small
+                        let mut count = bound1;
+                        while count >= bound2{
+                            sum += count;
+                            count -= step;
+                        }
+                    }
                 }
             }
             return Ok(vec![SmartValue::Number(sum)]);

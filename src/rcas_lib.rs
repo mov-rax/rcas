@@ -16,6 +16,8 @@ use fxhash::FxHashMap;
 
 use crate::rcas_functions::{FunctionController, Function};
 use crate::rcas_constants::ConstantController;
+use fltk::table::TableRowSelectMode::SelectMulti;
+
 //constants
 const ADD:char = '+'; //addition
 const SUB:char = '-'; //subtraction
@@ -206,6 +208,9 @@ impl RCas{
                                 id: identifier.clone(),
                                 data: DataType::Function
                             }),
+                            SmartValue::Range(bound1,step,bound2) => QueryResult::Assign(QueryAssign{
+                                id,
+                                data: DataType::Function }),
                             _ => QueryResult::Error("ASSIGNMENT NOT IMPLEMENTED".to_string()),
                         }
                     }
@@ -651,8 +656,8 @@ impl RCas{
                 position += 1;
             }
 
-            if nth == ','{
-                if counter == 0{ // if a comma is not within parentheses, something is wrong.
+            if nth == ',' || nth == ':'{ // Comma & RangeMarker
+                if counter == 0 && nth == ','{ // if a Comma is not within parentheses (or is alone), something is wrong.
                     return Err(Box::new(FormattingError {position}));
                 }
                 if number {
@@ -661,14 +666,15 @@ impl RCas{
                     number = false;
                     operator = false;
                 }
-                comma = true;
-                temp.push(SmartValue::Comma);
+                if nth == ','{
+                    comma = true;
+                    temp.push(SmartValue::Comma);
+                } else {
+                    temp.push(SmartValue::RangeMarker);
+                }
                 position += 1;
             }
 
-            if nth == ':'{ // range-building operator
-
-            }
 
         }
         //now, at the end of the road, do some final checking.
@@ -712,7 +718,6 @@ impl RCas{
             }
 
             if let Some(SmartValue::Comma) = input.get(count){ // if it has a comma, it will compute all the values that were before it
-
                 let comma_remove = |inny:&mut Vec<SmartValue>| {
                     for i in 0..inny.len(){
                         if let Some(value) = inny.get(i){
@@ -723,12 +728,56 @@ impl RCas{
                     }
                 };
                 let range = last_comma_location..count; // a range of important information
-                let range_len = range.len();
                 self.calculate(&mut input[range.clone()].to_vec());
                 comma_remove(input); // I tried removing it using math but I guess I couldn't figure out how to make it work consistently
-
                 continue;
             }
+
+            if let Some(SmartValue::RangeMarker) = input.get(count){
+                let step_upper_bound = if let Some(SmartValue::RangeMarker) = input.get(count+2){ // there is another RangeMarker here, meaning that it is a range with a step given
+                    Some((input[count+1].clone(), input[count+3].clone()))
+                } else {
+                    None
+                }; // if a second RangeMarker exists, step_upper_bound will contain the step and the upper bound
+                let lower_bound = input[count-1].clone();
+                let range = if let Some(step_upper_bound) = &step_upper_bound{
+                    let mut result = None;
+                    if let SmartValue::Number(lower) = lower_bound{
+                        if let SmartValue::Number(step) = step_upper_bound.0{
+                            if let SmartValue::Number(upper) = step_upper_bound.1{
+                                result = Some(SmartValue::Range(lower,step,upper));
+                            }
+                        }
+                    }
+                    result
+                } else { // A range with a default step of 1
+                    let mut result = None;
+                    if let SmartValue::Number(lower) = lower_bound{
+                        if let SmartValue::Number(upper) = input[count+1]{
+                            result = Some(SmartValue::Range(lower,Decimal::from(1),upper));
+                        }
+                    }
+                    result
+                };
+
+                if let Some(range) = range{ // check to see if the range was obtained
+                    if let Some(_) = step_upper_bound{ // BOUND:STEP:BOUND
+                        for _ in 0..5{
+                            input.remove(count-1); // remove what was once there
+                        }
+                        input.insert(count-1,range.clone());
+                    } else { // BOUND:BOUND
+                        for _ in 0..3{
+                            input.remove(count-1); // remove what was once there
+                        }
+                        input.insert(count-1, range.clone());
+                    }
+                } else { // There was an error :(
+                    input.clear();
+                    input.push(SmartValue::Error(String::from("Range Syntax Error")));
+                }
+            }
+
             count += 1;
         }
         count = 0;
@@ -1095,7 +1144,8 @@ pub enum SmartValue{
     Variable(String), // Utilized in user-defined functions. Each variable as an identifier attributed to it.
     Parameters(Vec<String>), // A marker that is utilized during parsing that identifies the order in which the name of parameters are placed in a function declaration
     Placeholder(Vec<SmartValue>),
-    Range(Decimal,Decimal,Decimal), // Lower, Step, Upper
+    Range(Decimal,Decimal,Decimal), // Bound1, Step, Bound2
+    RangeMarker, // A colon :
     Label(String,Vec<SmartValue>), // A label can contains an identifier and a possible expression.
     Comma, // A special character used to separate parameters
     Assign(String, Vec<SmartValue>), // A special equals = operator. It is used to show that a value is being assigned to an identifier.
@@ -1125,6 +1175,13 @@ impl SmartValue{
             SmartValue::Text(string) => buf.push_str(&**string),
             SmartValue::Variable(id) => buf.push_str(id),
             SmartValue::Parameters(_) => {},
+            SmartValue::Range(bound1,step,bound2) => {
+                if *step == Decimal::from(1){
+                    buf.push_str(format!("{}:{}", bound1, bound2).as_str());
+                } else {
+                    buf.push_str(format!("{}:{}:{}", bound1, step, bound2).as_str());
+                }
+            }
             _ => buf.push('?')
         }
         buf
