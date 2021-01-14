@@ -161,12 +161,23 @@ impl RCas{
                 Wrapper::recurse_print(&parsed, 0);
                 let time = time.elapsed().as_micros();
                 let mut assignment = None; // used to check if there was an assignment
+                let mut new_value = None;
+
                 if let Some(value) = parsed.get(0){
-                    if let SmartValue::Assign(id, value) = value{
-                        assignment = Some((true, id.clone()));
-                        parsed = value.clone();
+                    if let SmartValue::Assign(id,index, value) = value{
+                        if let Some(index) = index{
+                            assignment = Some((id.clone(), Some(index.clone())))
+                        } else {
+                            assignment = Some((id.clone(), None));
+                        }
+                        new_value = Some(value.clone());
                     }
                 }
+
+                if let Some(value) = new_value{
+                    parsed = value;
+                }
+
                 let mut wrapper = Wrapper::compose(parsed);
                 //Wrapper::recurse_print(&wrapper.values, 0);
                 wrapper.solve(self);
@@ -187,10 +198,18 @@ impl RCas{
                         if let SmartValue::Error(err) = values{
                             return QueryResult::Error(err.clone())
                         }
-                        let (_, id) = assignment.unwrap();
+                        let (id, index) = assignment.unwrap();
 
-                        environment.insert(id.clone(), wrapper.values.clone()); // adds the assignment to the
-                        environment.insert("ans".to_string(), wrapper.values.clone()); // adds to ans
+                        if let Some(index) = index{
+                            if let Some(mat) = environment.get_mut(id.as_str()){
+                                if let SmartValue::Matrix(mat) = &mut mat[0]{
+                                    mat.set_from(&index, values.clone());
+                                }
+                            }
+                        } else {
+                            environment.insert(id.clone(), wrapper.values.clone()); // adds the assignment to the
+                            environment.insert("ans".to_string(), wrapper.values.clone()); // adds to ans
+                        }
 
                         return match values{
                             SmartValue::Number(number) => QueryResult::Assign(QueryAssign {
@@ -380,8 +399,8 @@ impl RCas{
         let mut parameters = Vec::new(); // holds identifiers of any parameters when a query is an assignment
         let assignment = is_assignment(&*input); // checks to see if this input is an assignment :)
 
-        if let Some((_, index, params)) = &assignment{
-            beginning_index = *index;
+        if let Some((_, input_index, _, params)) = &assignment{
+            beginning_index = *input_index;
             if let Some(params) = params{
                 parameters = params.clone();
                 temp.push(SmartValue::Parameters(parameters.clone())); // pushes a marker
@@ -595,7 +614,7 @@ impl RCas{
                     }
 
 
-                    if next == '(' || next == ')' || next == ',' || NUM.contains(next) || OPR.contains(next) {
+                    if next == '(' || next == ')' || next == '[' || next == ']' || next == ',' || NUM.contains(next) || OPR.contains(next) {
                         if self.function_controller.get(foo) != Function::Nil{
                             temp.push(SmartValue::Function(foo.clone()));
                             //number = true;
@@ -688,6 +707,7 @@ impl RCas{
 
 
         }
+
         //now, at the end of the road, do some final checking.
         if operator{ //shouldn't be a lone operator at the end of some input
             return Err(Box::new(FormattingError{position}))
@@ -696,8 +716,19 @@ impl RCas{
             temp.push(SmartValue::Number(to_dec(&buf)?))
         }
 
-        if let Some((id, _, _)) = assignment{ // if there was an assignment, this is a special type of parsed information :)
-            return Ok(vec![SmartValue::Assign(id.clone(), temp)]) // returns a singular assign SmartValue
+        drop(environment); // Mutable reference to the environment is no longer needed.
+
+        if let Some((id, _, index, _)) = assignment{ // if there was an assignment, this is a special type of parsed information :)
+            if let Some(index) = index{
+                let index_result = self.parser(index.as_str()).unwrap();
+                let mut wrapped = Wrapper::compose(index_result);
+                wrapped.solve(self);
+                if let Some(SmartValue::Matrix(mat)) = wrapped.values.get(0){
+                    return Ok(vec![SmartValue::Assign(id.clone(), Some(mat.clone()), temp)])
+                }
+            }
+
+            return Ok(vec![SmartValue::Assign(id.clone(), None, temp)]) // returns a singular assign SmartValue
         }
 
         Ok(temp) //sends back the parsed information.
@@ -1184,7 +1215,7 @@ pub enum SmartValue{
     RangeMarker, // A colon :
     Label(String,Vec<SmartValue>), // A label can contains an identifier and a possible expression.
     Comma, // A special character used to separate parameters
-    Assign(String, Vec<SmartValue>), // A special equals = operator. It is used to show that a value is being assigned to an identifier.
+    Assign(String, Option<SmartMatrix>, Vec<SmartValue>), // A special equals = operator. It is used to show that a value is being assigned to an identifier.
     Error(String), // An error returned from a function call. The Stringified version of the error is returned.
     Cmd(Command), // A command that is returned from a function call. May exist when solving
 }
@@ -1354,20 +1385,11 @@ pub fn sv_vec_string(sv:&Vec<SmartValue>) -> String {
     buf
 }
 /// Checks to see of an input contains an assignment. If it does, it returns the index after the assignment operator was found.
-fn is_assignment(input:&str) -> Option<(String, usize, Option<Vec<String>>)>{
+fn is_assignment(input:&str) -> Option<(String, usize, Option<String>, Option<Vec<String>>)>{
 
     let mut identifier = input.chars().take_while(|x| *x != '=' ).collect::<String>();
     let identifier_len = identifier.len();
-    let mut has_parameters = false;
 
-    for x in identifier.chars(){
-        if !SYM.contains(x  ) && x != '(' && x != ')' && x != ','{
-            return None;
-        }
-        if x == '('{
-            has_parameters = true;
-        }
-    }
     if identifier.chars().filter_map(|x| match x {
         '(' => Some(1),
         ')' => Some(-1),
@@ -1380,10 +1402,27 @@ fn is_assignment(input:&str) -> Option<(String, usize, Option<Vec<String>>)>{
     //This will get the parameters if the assignment was that of a function.
     let parameters = if identifier.chars().last().unwrap() == ')'{ // if there is a closing word there
         let count = identifier.chars().take_while(|x| *x != '(').count();
-        let parameters = identifier.chars().skip(count+1).take_while(|x| *x != ')').collect::<String>();
+        let parameters = identifier.chars()
+            .skip(count+1)
+            .take_while(|x| *x != ')')
+            .collect::<String>();
         let parameter_identifiers = parameters.split(",").map(|x| String::from(x)).collect::<Vec<String>>();
         identifier = (&identifier[0..count]).to_string();
         Some(parameter_identifiers)
+    } else {
+        None
+    };
+
+    //This will get the index if the assignment contains an index.
+    let index = if identifier.contains("["){
+        // get the number of characters between the name of the identifier and the bracket
+        let count = identifier.chars().take_while(|x| *x != '[').count();
+        let index = identifier.chars()
+            .skip(count)
+            .collect::<String>();
+
+        identifier = (&identifier[0..count]).to_string(); // removes the [ ] from the identifier
+        Some(index)
     } else {
         None
     };
@@ -1392,7 +1431,7 @@ fn is_assignment(input:&str) -> Option<(String, usize, Option<Vec<String>>)>{
     if identifier_len == input.len(){
         return None;
     }
-    Some((identifier, identifier_len, parameters))
+    Some((identifier, identifier_len, index, parameters))
 }
 
 

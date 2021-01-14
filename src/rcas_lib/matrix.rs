@@ -2,10 +2,11 @@ use rust_decimal::Decimal;
 use crate::rcas_lib::{SmartValue, TypeMismatchError};
 use std::error;
 use std::fmt::{Debug, Formatter, Display};
+use rust_decimal::prelude::ToPrimitive;
 
 #[derive(Clone, PartialEq)]
 pub struct SmartMatrix{
-    data: Vec<Decimal>,
+    data: Vec<SmartValue>,
     row: usize,
     col: usize,
 }
@@ -25,11 +26,11 @@ impl SmartMatrix{
         };
 
         let data = input.iter()
-            .filter_map(|x| if let SmartValue::Number(number) = *x{
-                return Some(number);
+            .filter_map(|x| if let SmartValue::SemiColon = *x{
+                return None
             } else {
-                None
-            }).collect::<Vec<Decimal>>();
+                Some(x.clone())
+            }).collect::<Vec<SmartValue>>();
 
         if data.len() != row*col{
             return Err(Box::new(TypeMismatchError{}))
@@ -42,11 +43,11 @@ impl SmartMatrix{
     }
 
     /// Return a value in a matrix
-    pub fn get(&self, col:usize, row:usize) -> Option<Decimal>{
+    pub fn get(&self, col:usize, row:usize) -> Option<&SmartValue>{
         if col > 0 && row > 0{
             let base = self.col * (row - 1);
             let index = base + col - 1;
-            return Some(self.data[index])
+            return Some(&self.data[index])
         }
         None
     }
@@ -54,7 +55,7 @@ impl SmartMatrix{
     /// Set a value in a matrix
     ///
     /// If it was properly set it will return a Some(())
-    pub fn set(&mut self, col:usize, row:usize, value:Decimal) -> Option<()>{
+    pub fn set(&mut self, col:usize, row:usize, value:SmartValue) -> Option<()>{
         if col > 0 && row > 0{
             let base = self.col * (row - 1);
             let index = base + col - 1;
@@ -64,8 +65,33 @@ impl SmartMatrix{
         None
     }
 
+    pub fn set_from(&mut self, index_mat:&SmartMatrix, value:SmartValue) -> Option<()>{
+        if index_mat.len() == 1{
+            if let SmartValue::Number(index) = &index_mat.data[0]{
+                if let Some(index) = index.to_usize(){
+                    if index > 0{
+                        self.data[(index) - 1 as usize] = value;
+                        return Some(())
+                    }
+                }
+            }
+        } else if index_mat.len() == 2{
+            if let SmartValue::Number(col) = &index_mat.data[0]{
+                if let SmartValue::Number(row) = &index_mat.data[1]{
+                    if let Some(col) = col.to_usize(){
+                        if let Some(row) = row.to_usize(){
+                            self.set(col, row, value);
+                            return Some(())
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Get a mutable reference to a value in the matrix
-    pub fn get_mut(&mut self, col:usize, row:usize) -> Option<&mut Decimal>{
+    pub fn get_mut(&mut self, col:usize, row:usize) -> Option<&mut SmartValue>{
         if col > 0 && row > 0 {
             let base = self.col * (row - 1);
             let index = base + col - 1;
@@ -103,7 +129,7 @@ impl Display for SmartMatrix{
         let mut temp = String::new();
         for i in 1..=self.row{
             for j in 1..=self.col{
-                temp.push_str(self.get(j,i).unwrap().to_string().as_str());
+                temp.push_str(self.get(j,i).unwrap().get_value(false).as_str());
                 temp.push('\t');
             }
             temp.push('\n');
