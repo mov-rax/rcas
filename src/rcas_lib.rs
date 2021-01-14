@@ -58,13 +58,23 @@ struct UnknownIdentifierError{
     identifier:String,
 }
 #[derive(Debug,Clone,PartialEq)]
-pub struct TypeMismatchError;
+pub struct TypeMismatchError{
+    pub found_in: String, // name can be dynamic
+    pub found_type: String, // type found can be dynamic
+    pub required_type: &'static str,
+}
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct NegativeNumberError;
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct DivideByZeroError;
+
+#[derive(Debug,Clone,PartialEq)]
+pub struct IndexOutOfBoundsError{
+    pub found_index: isize,
+    pub max_index: usize,
+}
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct IncorrectNumberOfArgumentsError<'a>{
@@ -75,6 +85,12 @@ pub struct IncorrectNumberOfArgumentsError<'a>{
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct OverflowError;
+
+impl fmt::Display for IndexOutOfBoundsError{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "INDEX OUT OF BOUNDS!\nIndex {} is not within 1:{}", self.found_index, self.max_index)
+    }
+}
 
 impl fmt::Display for OverflowError{
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -137,6 +153,7 @@ impl error::Error for NegativeNumberError{}
 impl error::Error for DivideByZeroError{}
 impl<'a> error::Error for IncorrectNumberOfArgumentsError<'a>{}
 impl error::Error for OverflowError{}
+impl error::Error for IndexOutOfBoundsError{}
 
 pub struct RCas{
     // Environment that holds user-defined variables and functions. It is an FxHashMap instead of a HashMap for speed purposes.
@@ -397,6 +414,7 @@ impl RCas{
         let mut was_double = false; // used to know if a currently-building string was started with double or single quotes
         let mut beginning_index = 0; // used to keep track of the starting index, in case there is an assignment
         let mut parameters = Vec::new(); // holds identifiers of any parameters when a query is an assignment
+        let mut was_matrix = false; // used to keep track if a matrix from the environment is present
         let assignment = is_assignment(&*input); // checks to see if this input is an assignment :)
 
         if let Some((_, input_index, _, params)) = &assignment{
@@ -482,14 +500,6 @@ impl RCas{
                     temp.push(SmartValue::Number(to_dec(&buf)?))
                 }
                 temp.push(SmartValue::RParen);
-
-                //check if the next character is the start of a number, or parentheses then
-                //multiplication is implies
-                if let Some(x) = next_nth{
-                    if NUM.contains(x) || x == '(' || SYM.contains(x){
-                        temp.push(SmartValue::Operator('*'))
-                    }
-                }
 
                 buf.clear();
                 number = false;
@@ -738,6 +748,7 @@ impl RCas{
     pub fn calculate(&mut self, input: &mut Vec<SmartValue>){
         let mut count:usize = 0;
         let mut last_comma_location:usize = 0;
+        //println!("Number of SmartValues in input: {}", input.len());
         //print_sv_vec(&input);
         //Wrapper::recurse_print(&input, 0);
         //println!("---");
@@ -827,6 +838,7 @@ impl RCas{
                         }
                         input.insert(count-1, range.clone());
                     }
+                    count = safe_sub(count); // move it back
                 } else { // There was an error :(
                     input.clear();
                     input.push(SmartValue::Error(String::from("Range Syntax Error")));
@@ -889,7 +901,7 @@ impl RCas{
                             }
                         }
                     } else if let Some(SmartValue::MatrixMarker) = input.get(count){
-                        let mat = SmartMatrix::magic(&parameters[..]);
+                        let mat = SmartMatrix::new_from(&parameters[..]);
                         match mat{
                             Ok(mat) => {
                                 input.remove(count+1);
@@ -906,6 +918,25 @@ impl RCas{
                 }
             }
 
+            if let Some(SmartValue::Matrix(mat)) = input.get(count){
+                if let Some(SmartValue::MatrixMarker) = input.get(count+1){
+                    if let Some(SmartValue::Placeholder(index)) = input.get(count+2){
+                        let index = SmartMatrix::new_from(index).unwrap(); // Always will be a SmartMatrix
+                        match mat.get_from(&index){
+                            Ok(val) => { // Remove matrix, marker, and placeholder and replace it with value
+                                input.remove(count);
+                                input.remove(count);
+                                input.remove(count);
+                                input.push(val);
+                            },
+                            Err(err) => {
+                                input.clear();
+                                input.push(SmartValue::Error(err.to_string()))
+                            }
+                        }
+                    }
+                }
+            }
             count += 1;
         }
         count = 0;
@@ -1260,6 +1291,7 @@ impl SmartValue{
         }
         buf
     }
+
 }
 
 

@@ -146,25 +146,30 @@ impl FunctionController {
         }
     }
 
+    /// Function used internally to find the type of a SmartValue
+    pub fn internal_type_of(input:&SmartValue) -> String{
+        match input{
+            SmartValue::Number(_) => String::from("Number"),
+            SmartValue::Text(_) => String::from("Text"),
+            SmartValue::Function(_) => String::from("Function"),
+            SmartValue::Cmd(_) => String::from("Cmd"),
+            SmartValue::Operator(_) => String::from("Operator"),
+            SmartValue::Variable(_) => String::from("Variable"),
+            SmartValue::Label(_,_) => String::from("Label"),
+            SmartValue::Comma => String::from("Comma"),
+            SmartValue::Error(_) => String::from("Error"),
+            SmartValue::Range(_,_,_) => String::from("Range"),
+            SmartValue::Placeholder(_) => String::from("Placeholder"),
+            SmartValue::Matrix(mat) => format!("{}x{} Matrix", mat.cols(), mat.rows()),
+            _ => String::from("Unknown"),
+        }
+    }
+
     fn type_of(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
         let mut result = String::new();
         let mut set = false;
         if let Some(val) = input.get(0){
-            result = match val{
-                SmartValue::Number(_) => String::from("Number"),
-                SmartValue::Text(_) => String::from("Text"),
-                SmartValue::Function(_) => String::from("Function"),
-                SmartValue::Cmd(_) => String::from("Cmd"),
-                SmartValue::Operator(_) => String::from("Operator"),
-                SmartValue::Variable(_) => String::from("Variable"),
-                SmartValue::Label(_,_) => String::from("Label"),
-                SmartValue::Comma => String::from("Comma"),
-                SmartValue::Error(_) => String::from("Error"),
-                SmartValue::Range(_,_,_) => String::from("Range"),
-                SmartValue::Placeholder(_) => String::from("Placeholder"),
-                SmartValue::Matrix(mat) => format!("{}x{} Matrix", mat.cols(), mat.rows()),
-                _ => String::from("Unknown"),
-            };
+            result = Self::internal_type_of(val);
             set = true;
         }
         return if set {
@@ -210,7 +215,11 @@ impl FunctionController {
                     }
                 }
             } else {
-                return Err(Box::new(TypeMismatchError{}))
+                return Err(Box::new(TypeMismatchError{
+                    found_in: "expand".to_string(),
+                    found_type: Self::internal_type_of(&value),
+                    required_type: "Range"
+                }))
             }
         }
         Ok(expanded)
@@ -229,7 +238,11 @@ impl FunctionController {
                         return Ok(vec![SmartValue::Cmd(Command::SetMode(CalculationMode::Degree))]);
                     },
                     _ => {
-                        return Err(Box::new(TypeMismatchError {}))
+                        return Err(Box::new(TypeMismatchError {
+                            found_in: "setmode".to_string(),
+                            found_type: Self::internal_type_of(&input[0]),
+                            required_type: "Text"
+                        }))
                     }
                 }
             }
@@ -281,7 +294,12 @@ impl FunctionController {
             answer = cas.recurse_solve(answer);
             return Ok(answer)
         }
-        Err(Box::new(TypeMismatchError{}))
+
+        Err(Box::new(TypeMismatchError{
+            found_in: self.custom_function_id.clone(),
+            found_type: Self::internal_type_of(&self.custom_function[0]),
+            required_type: "Parameters"
+        }))
     }
 
     pub fn drop_v(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
@@ -290,7 +308,11 @@ impl FunctionController {
             if let SmartValue::Text(id) = value{
                 environment.remove(id);
             } else {
-                return Err(Box::new(TypeMismatchError {}))
+                return Err(Box::new(TypeMismatchError {
+                    found_in: "drop".to_string(),
+                    found_type: Self::internal_type_of(value),
+                    required_type: "Text"
+                }))
             }
         }
         Ok(vec![SmartValue::Cmd(Command::RefreshEnvironment)])
@@ -343,7 +365,11 @@ impl FunctionController {
                 let result = SmartValue::Number(result);
                 return Ok(vec![result])
             } else{
-                return Err(Box::new(TypeMismatchError {}))
+                return Err(Box::new(TypeMismatchError {
+                    found_in: "factorial".to_string(),
+                    found_type: Self::internal_type_of(&input[0]),
+                    required_type: "Number"
+                }))
             }
         }
         return Err(Box::new(IncorrectNumberOfArgumentsError {name: "factorial", found: input.len(), requires: 1}))
@@ -387,12 +413,21 @@ impl FunctionController {
                             count -= step;
                         }
                     }
+                } else {
+                    return Err(Box::new(TypeMismatchError{
+                        found_in: "sum".to_string(),
+                        found_type: Self::internal_type_of(&i),
+                        required_type: "Number"
+                    }))
                 }
             }
             return Ok(vec![SmartValue::Number(sum)]);
         }
-        return Err(Box::new(TypeMismatchError{}))
-
+        Err(Box::new(IncorrectNumberOfArgumentsError{
+            name: "sum",
+            found: input.len(),
+            requires: 1
+        }))
     }
 
     pub fn sin_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
@@ -433,11 +468,27 @@ impl FunctionController {
             if let SmartValue::Number(value) = input[0]{
                 if let SmartValue::Number(modder) = input[1]{
                     if value.round() != value || modder.round() != modder{
-                        return Err(Box::new(TypeMismatchError{})) // Should be whole numbers.
+                        return Err(Box::new(TypeMismatchError{
+                            found_in: "mod".to_string(),
+                            found_type: "Number".to_string(),
+                            required_type: "(Whole) Number"
+                        })) // Should be whole numbers.
                     }
                     let (value, modder) = (value.to_i128().unwrap(), modder.to_i128().unwrap());
                     return Ok(vec![SmartValue::Number(Decimal::from_i128(value % modder).unwrap())]); //this looks ugly, but it works...
+                } else {
+                    return Err(Box::new(TypeMismatchError{
+                        found_in: "mod".to_string(),
+                        found_type: Self::internal_type_of(&input[1]),
+                        required_type: "(Whole) Number"
+                    }))
                 }
+            } else {
+                return Err(Box::new(TypeMismatchError{
+                    found_in: "mod".to_string(),
+                    found_type: Self::internal_type_of(&input[0]),
+                    required_type: "(Whole) Number"
+                }))
             }
         }
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "mod", found:input.len(), requires:2})) // any more than 1 input = error
@@ -571,11 +622,22 @@ impl FunctionController {
             for i in input {
                 if let SmartValue::Number(number) = i {
                     mul *= number;
+                } else {
+                    return Err(Box::new(TypeMismatchError {
+                        found_in: "mul".to_string(),
+                        found_type: Self::internal_type_of(&i),
+                        required_type: "Number"
+                    }))
                 }
             }
             return Ok(vec![SmartValue::Number(mul)]);
         }
-        return Err(Box::new(TypeMismatchError {}))
+        return Err(Box::new(IncorrectNumberOfArgumentsError{
+            name: "mul",
+            found: 0,
+            requires: usize::max_value()
+        }))
+
     }
 
     pub fn max_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
@@ -584,11 +646,22 @@ impl FunctionController {
             for i in input{
                 if let SmartValue::Number(number) = i{
                     if number > max{max = number;}
+                } else {
+                    return Err(Box::new(TypeMismatchError {
+                        found_in: "max".to_string(),
+                        found_type: Self::internal_type_of(&i),
+                        required_type: "Number"
+                    }))
                 }
             }
             return Ok(vec![SmartValue::Number(max)]);
         }
-        return Err(Box::new(TypeMismatchError{}))
+
+        return Err(Box::new(IncorrectNumberOfArgumentsError{
+            name: "max",
+            found: 0,
+            requires: usize::max_value()
+        }))
 
     }
 
@@ -598,11 +671,21 @@ impl FunctionController {
             for i in input{
                 if let SmartValue::Number(number) = i{
                     if number < min{min = number;}
+                } else {
+                    return Err(Box::new(TypeMismatchError {
+                        found_in: "min".to_string(),
+                        found_type: Self::internal_type_of(&i),
+                        required_type: "Number"
+                    }))
                 }
             }
             return Ok(vec![SmartValue::Number(min)]);
         }
-        return Err(Box::new(TypeMismatchError{}))
+        return Err(Box::new(IncorrectNumberOfArgumentsError{
+            name: "min",
+            found: 0,
+            requires: usize::max_value()
+        }))
 
     }
 
@@ -613,26 +696,41 @@ impl FunctionController {
             for i in input{
                 if let SmartValue::Number(number) = i{
                     avg += number.div(size);
+                } else {
+                    return Err(Box::new(TypeMismatchError {
+                        found_in: "avg".to_string(),
+                        found_type: Self::internal_type_of(&i),
+                        required_type: "Number"
+                    }))
                 }
             }
             return Ok(vec![SmartValue::Number(avg)]);
         }
-        return Err(Box::new(TypeMismatchError{}))
+        return Err(Box::new(IncorrectNumberOfArgumentsError{
+            name: "avg",
+            found: 0,
+            requires: usize::max_value()
+        }))
 
     }
 
     pub fn stdev_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
         let size = Decimal::from_usize(input.len()).unwrap();
-        let copy = input.clone();
         if input.len() != 0{
             let mut avg = Decimal::from(0);
             let mut val = Decimal::from(0);
-            for i in input{
+            for i in &input{
                 if let SmartValue::Number(number) = i{
-                    avg += number.div(size);
+                    avg += (*number).div(size);
+                } else {
+                    return Err(Box::new(TypeMismatchError {
+                        found_in: "min".to_string(),
+                        found_type: Self::internal_type_of(&i),
+                        required_type: "Number"
+                    }))
                 }
             }
-            for  i in copy{
+            for  i in input{
                 if let SmartValue::Number(number) = i{
                     val += (number*number) - (Decimal::from(2)*(number*avg)) + (avg * avg);
                 }
@@ -640,7 +738,11 @@ impl FunctionController {
             let stdev = SmartValue::Number(Decimal::from_f64((val/size).to_f64().unwrap().sqrt()).unwrap());
             return Ok(vec![stdev]);
         }
-        return Err(Box::new(TypeMismatchError{}))
+        return Err(Box::new(IncorrectNumberOfArgumentsError{
+            name: "stdev",
+            found: 0,
+            requires: usize::max_value()
+        }))
     }
 
     pub fn mag_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
@@ -649,11 +751,21 @@ impl FunctionController {
             for i in input{
                 if let SmartValue::Number(number) = i{
                     value += number*number;
+                } else {
+                    return Err(Box::new(TypeMismatchError {
+                        found_in: "mag".to_string(),
+                        found_type: Self::internal_type_of(&i),
+                        required_type: "Number"
+                    }))
                 }
             }
             return Ok(vec![SmartValue::Number(Decimal::from_f64(value.to_f64().unwrap().sqrt()).unwrap())])
         }
-        return Err(Box::new(TypeMismatchError{}))
+        return Err(Box::new(IncorrectNumberOfArgumentsError{
+            name: "mag",
+            found: 0,
+            requires: usize::max_value()
+        }))
     }
 
     pub fn angle_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
@@ -805,7 +917,11 @@ impl FunctionController {
             let var = SmartValue::Number(Decimal::from_f64((val/size).to_f64().unwrap()).unwrap());
             return Ok(vec![var]);
         }
-        return Err(Box::new(TypeMismatchError{}))
+        return Err(Box::new(IncorrectNumberOfArgumentsError{
+            name: "variance",
+            found: 0,
+            requires: usize::max_value()
+        }))
     }
 
     pub fn fg_f (&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{ // the force of gravity
