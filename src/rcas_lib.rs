@@ -18,6 +18,10 @@ use crate::rcas_functions::{FunctionController, Function};
 use crate::rcas_constants::ConstantController;
 use fltk::table::TableRowSelectMode::SelectMulti;
 
+mod matrix;
+
+use matrix::SmartMatrix;
+
 //constants
 const ADD:char = '+'; //addition
 const SUB:char = '-'; //subtraction
@@ -187,6 +191,7 @@ impl RCas{
 
                         environment.insert(id.clone(), wrapper.values.clone()); // adds the assignment to the
                         environment.insert("ans".to_string(), wrapper.values.clone()); // adds to ans
+
                         return match values{
                             SmartValue::Number(number) => QueryResult::Assign(QueryAssign {
                                 id,
@@ -211,6 +216,9 @@ impl RCas{
                             SmartValue::Range(bound1,step,bound2) => QueryResult::Assign(QueryAssign{
                                 id,
                                 data: DataType::Function }),
+                            SmartValue::Matrix(_) => QueryResult::Assign(QueryAssign{
+                                id,
+                                data: DataType::Matrix }),
                             _ => QueryResult::Error("ASSIGNMENT NOT IMPLEMENTED".to_string()),
                         }
                     }
@@ -266,42 +274,81 @@ impl RCas{
         //ONE RULE MUST FOLLOWED, WHICH IS THAT EACH NTH IN THE LOOP CAN ONLY SEE
         //THE NTH IN FRONT OF IT. GOING BACK TO CHECK VALUES IS NOT ALLOWED.
 
+        // [sin(1) cos(1) 1+1 3 1/3]
+
         // GETS THE INPUT
         let input = { // [[4 2 3] [4 3 2]]
             let mut flag = false;
             let mut count = 0;
-            let mut dq = false;
-            let mut sq = false;
+            let mut dq = false; // double quotes
+            let mut sq = false; // single quotes
+            let mut sf = false; // space flag
+            let mut scf = false; // semicolon flag
+            let mut jsf = true; // (Matrix) just-started flag
 
-            let tinput = input.chars().filter(|x|{
+            let tinput = input.chars().filter_map(|x|{
                 // UNICODE: 0022 -> "
                 // UNICODE: 0027 -> ' '
                 if count < 0{
-                    return false;
+                    return None
                 }
 
-                if *x == '\u{0022}' || *x == '\u{0027}'{
+                if x == '\u{0022}' || x == '\u{0027}'{
                     flag = !flag; // flips flag
                 }
-                if *x == '\u{0022}'{
+                if x == '\u{0022}'{
                     dq = !dq;
                 }
-                if *x == '\u{0027}'{
+                if x == '\u{0027}'{
                     sq = !sq;
                 }
+                if x == ';'{
+                    scf = true;
+                }
 
-                if *x == '[' {
+                if count != 0 { // Deals with removing excess spaces from matrices
+
+                    if scf{ // if there was a semicolon
+                        return if x == ' ' && x != ';'{
+                            None
+                        } else if x == ';'{
+                            Some(x)
+                        } else {
+                            scf = false;
+                            Some(x)
+                        }
+                    }
+
+                    if jsf && x == ' '{ // prevents , from being inserted before first element
+                        return None;
+                    } else {
+                        jsf = false;
+                    }
+
+                    if x == ' '{
+                        return if sf {
+                            None // No more spaces
+                        } else {
+                            sf = true;
+                            Some(',') // Replace space with a comma
+                        }
+                    } else {
+                        sf = false; // Not a space anymore
+                    }
+                }
+
+                if x == '[' {
                     count += 1;
-                } else if *x == ']' {
+                } else if x == ']' {
                     count -= 1;
                 }
                 if flag || count != 0{
-                    return true;
+                    return Some(x)
                 }
-                if *x != ' '{
-                    return true;
+                if x != ' '{
+                    return Some(x)
                 }
-                false
+                None
             }).collect::<String>();
 
             let mut result = Err(FormattingError{position: tinput.len() as u32 });
@@ -320,7 +367,6 @@ impl RCas{
         let mut environment = self.environment.borrow_mut(); // gets a mutable reference to the environment.
         let mut temp:Vec<SmartValue> = Vec::with_capacity(30); //temp value that will be returned
         let mut buf:Vec<char> = Vec::new(); //buffer for number building
-        let mut mat_buf:Vec<SmartValue> = Vec::new(); //buffer for matrix building
         let mut counter = 0; //used to keep track of parentheses
         let mut number = false; //used to keep track of number building
         let mut position = 0; //used to keep track of error position
@@ -332,10 +378,6 @@ impl RCas{
         let mut was_double = false; // used to know if a currently-building string was started with double or single quotes
         let mut beginning_index = 0; // used to keep track of the starting index, in case there is an assignment
         let mut parameters = Vec::new(); // holds identifiers of any parameters when a query is an assignment
-        let mut building_matrix = false; //used to keep track of matrix-building
-        let mut rows = 0;
-        let mut cols = 0;
-        let mut matrix_marker = 0;
         let assignment = is_assignment(&*input); // checks to see if this input is an assignment :)
 
         if let Some((_, index, params)) = &assignment{
@@ -358,45 +400,7 @@ impl RCas{
 
         for i in beginning_index..input.len(){
             let nth:char = input.chars().nth(i).ok_or(GenericError)?;
-            let next_nth:Option<char> = input.chars().nth(i + 1);
-
-
-            // if nth == '['{
-            //     building_matrix = true;
-            //     counter += 1;
-            // }
-            //
-            // if nth == ' ' && building_matrix{
-            //     let info = (&temp[matrix_marker..]).to_vec().clone();
-            //     for _ in 0..info.len(){
-            //         temp.pop();
-            //     }
-            //     let composed = Self::composer(info);
-            //     let solved = self.recurse_solve(composed);
-            //     let solved = solved[0].clone();
-            //     mat_buf.push(solved);
-            //     matrix_marker = temp.len();
-            //     buf.clear();
-            //     number = false;
-            //     dec = false;
-            //     operator = false;
-            //     continue;
-            // }
-            //
-            // if nth == ';' && building_matrix{
-            // if cols == 0{
-            //     cols = mat_buf.len();
-            // }
-            //     rows += 1;
-            //
-            // }
-            //
-            // if nth == ']'{
-            //     counter -= 1;
-            //     if counter == 0{
-            //         building_matrix = false;
-            //     }
-            // }
+            let next_nth = input.chars().nth(i + 1);
 
             if nth == r#"""#.chars().nth(0).unwrap(){ // double quotes
                 if string{
@@ -433,13 +437,17 @@ impl RCas{
             }
 
 
-            //check parentheses
-            if nth == '('{
+            //check parentheses/braces
+            if nth == '(' || nth == '['{
                 if number{ //if a number is being built, then assume that it will multiply
                     temp.push(SmartValue::Number(to_dec(&buf)?));
                     temp.push(SmartValue::Operator('*'));
                 }
+                if nth == '['{
+                    temp.push(SmartValue::MatrixMarker); // Shows that the following is a matrix
+                }
                 temp.push(SmartValue::LParen);
+
                 buf.clear();
                 number = false;
                 dec = false;
@@ -450,11 +458,12 @@ impl RCas{
                 continue
             }
 
-            if nth == ')'{
+            if nth == ')' || nth == ']'{
                 if number{
                     temp.push(SmartValue::Number(to_dec(&buf)?))
                 }
                 temp.push(SmartValue::RParen);
+
                 //check if the next character is the start of a number, or parentheses then
                 //multiplication is implies
                 if let Some(x) = next_nth{
@@ -656,7 +665,7 @@ impl RCas{
                 position += 1;
             }
 
-            if nth == ',' || nth == ':'{ // Comma & RangeMarker
+            if nth == ',' || nth == ':' || nth == ';'{ // Comma, RangeMarker & SemiColon
                 if counter == 0 && nth == ','{ // if a Comma is not within parentheses (or is alone), something is wrong.
                     return Err(Box::new(FormattingError {position}));
                 }
@@ -669,8 +678,10 @@ impl RCas{
                 if nth == ','{
                     comma = true;
                     temp.push(SmartValue::Comma);
-                } else {
+                } else if nth == ':'{
                     temp.push(SmartValue::RangeMarker);
+                } else {
+                    temp.push(SmartValue::SemiColon)
                 }
                 position += 1;
             }
@@ -699,7 +710,7 @@ impl RCas{
         //print_sv_vec(&input);
         //Wrapper::recurse_print(&input, 0);
         //println!("---");
-        // does magic with Vec<SmartValue> that have Commas, i.e., are parameters in functions
+        // does magic with Vec<SmartValue> that have Commas, i.e., are parameters in functions/ values in matrices
         loop{
             if input.get(count) == None { // All indices have been looked through
                 break;
@@ -717,21 +728,32 @@ impl RCas{
                 return;
             }
 
-            if let Some(SmartValue::Comma) = input.get(count){ // if it has a comma, it will compute all the values that were before it
-                let comma_remove = |inny:&mut Vec<SmartValue>| {
-                    for i in 0..inny.len(){
-                        if let Some(value) = inny.get(i){
-                            if *value == SmartValue::Comma{
-                                inny.remove(i);
+            match input.get(count){
+                // if it has a comma or a semicolon, it will compute all the values before it.
+                Some(SmartValue::Comma) => {
+                    let comma_remove = |inny:&mut Vec<SmartValue>| {
+                        for i in 0..inny.len(){
+                            if let Some(value) = inny.get(i){
+                                if *value == SmartValue::Comma { // TODO - Fix semicolon getting removed
+                                    inny.remove(i);
+                                }
                             }
                         }
-                    }
-                };
-                let range = last_comma_location..count; // a range of important information
-                self.calculate(&mut input[range.clone()].to_vec());
-                comma_remove(input); // I tried removing it using math but I guess I couldn't figure out how to make it work consistently
-                continue;
+                    };
+                    let range = (last_comma_location+1)..count; // a range of important information
+                    self.calculate(&mut input[range.clone()].to_vec());
+                    comma_remove(input); // I tried removing it using math but I guess I couldn't figure out how to make it work consistently
+                    continue;
+                },
+                Some(SmartValue::SemiColon) => {
+                    let range = last_comma_location+1..count;
+                    self.calculate(&mut input[range].to_vec());
+                    count += 1;
+                    continue;
+                }
+                _ => {}
             }
+
 
             if let Some(SmartValue::RangeMarker) = input.get(count){
                 let step_upper_bound = if let Some(SmartValue::RangeMarker) = input.get(count+2){ // there is another RangeMarker here, meaning that it is a range with a step given
@@ -785,36 +807,30 @@ impl RCas{
         count = 0;
 
 
-        // Calculates functions!!
+        // Calculates functions & Creates Matrices!!
         loop {
             if input.get(count) == None{
                 break;
             }
 
-            if let Some(SmartValue::Function(name)) = input.get(count){
-                if let Some(val) = input.get(count+1){ //if there is a value in front of a function, it is not a handle to a function!
-                    if let SmartValue::Placeholder(parameters) = val{ // A placeholder MUST be in front of a function, otherwise it will not be executed.
 
-                        fn take_while_loop(input:&Vec<SmartValue>) -> bool{
-                            input.iter().take_while(|s| {
-                                if let SmartValue::Variable(_) = s{
-                                    return false;
-                                }
-                                if let SmartValue::Placeholder(holder) = s{
-                                    return take_while_loop(holder)
-                                }
-                                true
-                            }).count() == input.len()
-                    }
-                        let len = parameters.iter().take_while(|s| {
-                            if let SmartValue::Variable(_) = s{
-                                return false;
-                            }
-                            if let SmartValue::Placeholder(holder) = s{
-                                return take_while_loop(holder)
-                            }
-                            true
-                        }).count();
+            if let Some(val) = input.get(count+1){ //if there is a value in front of a function, it is not a handle to a function!
+                if let SmartValue::Placeholder(parameters) = val{ // A placeholder MUST be in front of a function, otherwise it will not be executed.
+
+                fn take_while_loop(input:&Vec<SmartValue>) -> usize{
+                    input.iter().take_while(|s| {
+                        if let SmartValue::Variable(_) = s{
+                            return false;
+                        }
+                        if let SmartValue::Placeholder(holder) = s{
+                            return take_while_loop(holder) == input.len()
+                        }
+                        true
+                    }).count()
+                }
+
+                    if let Some(SmartValue::Function(name)) = input.get(count){
+                        let len = take_while_loop(&parameters);
 
                         if len == parameters.len(){
                             let function = self.function_controller.get(name.as_str()); // gets the function from its identifier
@@ -841,11 +857,24 @@ impl RCas{
                                 }
                             }
                         }
+                    } else if let Some(SmartValue::MatrixMarker) = input.get(count){
+                        let mat = SmartMatrix::magic(&parameters[..]);
+                        match mat{
+                            Ok(mat) => {
+                                input.remove(count+1);
+                                input.remove(count);
+                                input.insert(count, SmartValue::Matrix(mat));
+                            },
+                            Err(err) => { // NUKE THE ENTIRE INPUT
+                                input.clear();
+                                input.push(SmartValue::Error(err.to_string()));
+                                return;
+                            }
+                        }
                     }
-                } else {
-
                 }
             }
+
             count += 1;
         }
         count = 0;
@@ -939,7 +968,7 @@ impl RCas{
                 }
                 let subsection = input[parentheses_locations.0+1 .. parentheses_locations.1].to_vec();
 
-                let placeholder = SmartValue::Placeholder(Self::composer(subsection));
+                let placeholder = SmartValue::Placeholder(Self::composer(subsection)); // The power of recursion
                 placeholder_locations.push(parentheses_locations.0);
                 for _ in parentheses_locations.0 ..parentheses_locations.1{
                     input.remove(parentheses_locations.0);
@@ -987,7 +1016,10 @@ impl RCas{
                     // a nice way to get the resolved value. If the previous value is a not function, then it is just a Number.
                     // Otherwise, it is probably parameters to a function, and as such should be in
                     // A placeholder.
+                    // This also works for Matrices :)
                     let value = if let Some(SmartValue::Function(_)) = input.get(safe_sub(x)){ // if previous was a function, then put the solution in a placeholder.
+                        SmartValue::Placeholder(solved)
+                    } else if let Some(SmartValue::MatrixMarker) = input.get(safe_sub(x)){
                         SmartValue::Placeholder(solved)
                     } else {
                         solved[0].clone()
@@ -1048,15 +1080,9 @@ pub struct QueryAssign{
 /// Used to facilitate the transfer of information.
 pub enum DataType{
     Number(Decimal), // A Number
-    Matrix(Rc<RefCell<SmartMatrix>>), // A reference to a vector of numbers (A reference is used to avoid copying data)
+    Matrix,
     Image(QueryImage), // Assigning to a query
     Function // Assigned to a function
-}
-
-pub struct SmartMatrix{
-    data: Vec<Decimal>,
-    rows: u64,
-    columns: u64,
 }
 
 #[derive(PartialEq, Clone)]
@@ -1102,7 +1128,10 @@ impl Wrapper{
                     println!("{}:,", level);
                 },
                 SmartValue::Variable(id) => println!("{}:{}", level, id),
-                idk => println!("{}:{}", level, idk.get_value())
+                SmartValue::Matrix(mat) => {
+                    println!("[{}x{}]", mat.cols(), mat.rows());
+                }
+                idk => println!("{}:{}", level, idk.get_value(false))
             }
         }
     }
@@ -1141,8 +1170,13 @@ pub enum SmartValue{
     Function(String), //holds a function identifier
     Number(Decimal),
     Text(String),
-    LParen,
+    LParen, // for parentheses
     RParen,
+    LBrace, // for matrices
+    RBrace,
+    MatrixMarker, // Used when calculating/composing
+    Matrix(SmartMatrix),
+    SemiColon, // a semicolon for matrices.
     Variable(String), // Utilized in user-defined functions. Each variable as an identifier attributed to it.
     Parameters(Vec<String>), // A marker that is utilized during parsing that identifies the order in which the name of parameters are placed in a function declaration
     Placeholder(Vec<SmartValue>),
@@ -1156,7 +1190,7 @@ pub enum SmartValue{
 }
 
 impl SmartValue{
-    pub fn get_value(&self) -> String{
+    pub fn get_value(&self, extended:bool) -> String{
         let mut buf = String::new();
         match self{
             SmartValue::Operator(x) => buf.push(*x),
@@ -1170,7 +1204,7 @@ impl SmartValue{
             SmartValue::Placeholder(holder) => {
                 buf.push('(');
                 for x in holder{
-                    buf.push_str(&*x.get_value());
+                    buf.push_str(&*x.get_value(extended));
                 }
                 buf.push(')');
             },
@@ -1183,7 +1217,14 @@ impl SmartValue{
                 } else {
                     buf.push_str(format!("{}:{}:{}", bound1, step, bound2).as_str());
                 }
-            }
+            },
+            SmartValue::Matrix(mat) => {
+                if extended{
+                    buf.push_str(format!("{}", mat).as_str());
+                } else {
+                    buf.push_str(format!("[{}x{}]", mat.cols(), mat.rows()).as_str());
+                }
+            },
             _ => buf.push('?')
         }
         buf
@@ -1298,7 +1339,7 @@ fn number_of_parentheses_sections(input: &Vec<SmartValue>) -> usize{
 pub fn print_sv_vec(sv:&Vec<SmartValue>){
     let mut buf = String::new();
     for value in sv{
-        buf.push_str(value.get_value().as_str());
+        buf.push_str(value.get_value(false).as_str());
         //buf.push('|');
     }
     println!("{}", buf)
@@ -1308,7 +1349,7 @@ pub fn print_sv_vec(sv:&Vec<SmartValue>){
 pub fn sv_vec_string(sv:&Vec<SmartValue>) -> String {
     let mut buf = String::new();
     for value in sv{
-        buf.push_str(value.get_value().as_str());
+        buf.push_str(value.get_value(true).as_str());
     }
     buf
 }

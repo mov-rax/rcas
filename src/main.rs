@@ -138,7 +138,7 @@ fn main() {
                         },
                         QueryResult::Assign(_assigned) =>{
                             shell.insert_normal("\n");
-                            enviro.add_type("test", "testy");
+                            //enviro.add_type("test", "testy");
                         }
                         _ => {}
                     }

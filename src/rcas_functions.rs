@@ -162,6 +162,7 @@ impl FunctionController {
                 SmartValue::Error(_) => String::from("Error"),
                 SmartValue::Range(_,_,_) => String::from("Range"),
                 SmartValue::Placeholder(_) => String::from("Placeholder"),
+                SmartValue::Matrix(mat) => format!("{}x{} Matrix", mat.cols(), mat.rows()),
                 _ => String::from("Unknown"),
             };
             set = true;

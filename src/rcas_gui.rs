@@ -317,12 +317,12 @@ impl EnvironmentTable{
         let internal = internal.borrow();
         // this gets all of necessary information from the environment table
         let values = internal.iter().filter_map(|(k,v)| {
-            let data_type = v.iter().map(|x| x.get_value()).collect::<String>();
+            let data_type = v.iter().map(|x| x.get_value(false)).collect::<String>();
             Some((k.clone(), data_type))
         }).collect::<Vec<(String,String)>>();
         // adds each value that is in the internal environment table to the GUI
-        for (id, _type) in values{
-            self.add_type(&*id, &*_type);
+        for (id, ttype) in values{
+            self.add_type(&*id, &*ttype);
         }
         self.env.sort();
     }
