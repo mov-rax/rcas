@@ -86,6 +86,26 @@ pub struct IncorrectNumberOfArgumentsError<'a>{
 #[derive(Debug,Clone,PartialEq)]
 pub struct OverflowError;
 
+#[derive(Debug,Clone,PartialEq)]
+pub struct DimensionMismatch{
+    pub name: String,
+    pub found: (usize, usize), // row, col
+    pub requires: (usize, usize), // row, col
+    pub extra_info: Option<String>
+}
+
+impl fmt::Display for DimensionMismatch{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Some(info) = &self.extra_info{
+            write!(f, "DIMENSION MISMATCH!\nMatrix {} index dimensions are {}x{}. Found {}x{} instead.\n {}",
+                   &self.name, self.requires.0, self.requires.1, self.found.0, self.found.1, info)
+        } else {
+            write!(f, "DIMENSION MISMATCH!\nMatrix {} index dimensions are {}x{}. Found {}x{} instead.",
+                   &self.name, self.requires.0, self.requires.1, self.found.0, self.found.1,)
+        }
+    }
+}
+
 impl fmt::Display for IndexOutOfBoundsError{
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "INDEX OUT OF BOUNDS!\nIndex {} is not within 1:{}", self.found_index, self.max_index)
@@ -154,6 +174,7 @@ impl error::Error for DivideByZeroError{}
 impl<'a> error::Error for IncorrectNumberOfArgumentsError<'a>{}
 impl error::Error for OverflowError{}
 impl error::Error for IndexOutOfBoundsError{}
+impl error::Error for DimensionMismatch{}
 
 pub struct RCas{
     // Environment that holds user-defined variables and functions. It is an FxHashMap instead of a HashMap for speed purposes.
@@ -345,13 +366,13 @@ impl RCas{
                 if count != 0 { // Deals with removing excess spaces from matrices
 
                     if scf{ // if there was a semicolon
-                        return if x == ' ' && x != ';'{
-                            None
+                        if x == ' '{
+                            return None
                         } else if x == ';'{
-                            Some(x)
+                            return Some(x)
                         } else {
                             scf = false;
-                            Some(x)
+                            //Some(x)
                         }
                     }
 
@@ -747,10 +768,10 @@ impl RCas{
     ///Only takes slices with NO PARENTHESES.
     pub fn calculate(&mut self, input: &mut Vec<SmartValue>){
         let mut count:usize = 0;
-        let mut last_comma_location:usize = 0;
+        let mut last_comma_location:isize = -1;
         //println!("Number of SmartValues in input: {}", input.len());
-        println!("CALCULATE");
-        print_sv_vec(&input);
+        //println!("CALCULATE");
+        //print_sv_vec(&input);
         //Wrapper::recurse_print(&input, 0);
         //println!("---");
         // does magic with Vec<SmartValue> that have Commas, i.e., are parameters in functions/ values in matrices
@@ -784,13 +805,15 @@ impl RCas{
                             }
                         }
                     };
-                    let range = (last_comma_location+1)..count; // a range of important information
+                    let range = ((last_comma_location+1) as usize)..count; // a range of important information
+                    last_comma_location = count as isize;
                     self.calculate(&mut input[range.clone()].to_vec());
                     comma_remove(input); // I tried removing it using math but I guess I couldn't figure out how to make it work consistently
                     continue;
                 },
                 Some(SmartValue::SemiColon) => {
-                    let range = last_comma_location+1..count;
+                    let range = ((last_comma_location+1) as usize)..count;
+                    last_comma_location = count as isize;
                     self.calculate(&mut input[range].to_vec());
                     count += 1;
                     continue;
@@ -851,8 +874,8 @@ impl RCas{
         }
         count = 0;
 
-        println!("COMMAS REMOVED");
-        print_sv_vec(&input);
+        //println!("COMMAS REMOVED");
+        //print_sv_vec(&input);
         // Calculates functions & Creates Matrices!!
         loop {
             if input.get(count) == None{
@@ -945,8 +968,8 @@ impl RCas{
             count += 1;
         }
         count = 0;
-        println!("FUNCTIONS AND MATRICES CALCULATED");
-        print_sv_vec(&input);
+        //println!("FUNCTIONS AND MATRICES CALCULATED");
+        //print_sv_vec(&input);
         //loop for multiplication and division
         loop{
             if input.get(count) == None{ //All indices have been looked through
