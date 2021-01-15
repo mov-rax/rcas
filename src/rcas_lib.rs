@@ -749,10 +749,12 @@ impl RCas{
         let mut count:usize = 0;
         let mut last_comma_location:usize = 0;
         //println!("Number of SmartValues in input: {}", input.len());
-        //print_sv_vec(&input);
+        println!("CALCULATE");
+        print_sv_vec(&input);
         //Wrapper::recurse_print(&input, 0);
         //println!("---");
         // does magic with Vec<SmartValue> that have Commas, i.e., are parameters in functions/ values in matrices
+
         loop{
             if input.get(count) == None { // All indices have been looked through
                 break;
@@ -849,13 +851,34 @@ impl RCas{
         }
         count = 0;
 
-
+        println!("COMMAS REMOVED");
+        print_sv_vec(&input);
         // Calculates functions & Creates Matrices!!
         loop {
             if input.get(count) == None{
                 break;
             }
 
+            // Indexing a Matrix
+            if let Some(SmartValue::Matrix(mat)) = input.get(count){
+                if let Some(SmartValue::MatrixMarker) = input.get(count+1){
+                    if let Some(SmartValue::Placeholder(index)) = input.get(count+2){
+                        let index = SmartMatrix::new_from(index).unwrap(); // Always will be a SmartMatrix
+                        match mat.get_from(&index){
+                            Ok(val) => { // Remove matrix, marker, and placeholder and replace it with value
+                                input.remove(count);
+                                input.remove(count);
+                                input.remove(count);
+                                input.insert(count,val);
+                            },
+                            Err(err) => {
+                                input.clear();
+                                input.push(SmartValue::Error(err.to_string()))
+                            }
+                        }
+                    }
+                }
+            }
 
             if let Some(val) = input.get(count+1){ //if there is a value in front of a function, it is not a handle to a function!
                 if let SmartValue::Placeholder(parameters) = val{ // A placeholder MUST be in front of a function, otherwise it will not be executed.
@@ -904,9 +927,10 @@ impl RCas{
                         let mat = SmartMatrix::new_from(&parameters[..]);
                         match mat{
                             Ok(mat) => {
-                                input.remove(count+1);
+                                input.remove(count);
                                 input.remove(count);
                                 input.insert(count, SmartValue::Matrix(mat));
+                                count = safe_sub(count);
                             },
                             Err(err) => { // NUKE THE ENTIRE INPUT
                                 input.clear();
@@ -918,29 +942,11 @@ impl RCas{
                 }
             }
 
-            if let Some(SmartValue::Matrix(mat)) = input.get(count){
-                if let Some(SmartValue::MatrixMarker) = input.get(count+1){
-                    if let Some(SmartValue::Placeholder(index)) = input.get(count+2){
-                        let index = SmartMatrix::new_from(index).unwrap(); // Always will be a SmartMatrix
-                        match mat.get_from(&index){
-                            Ok(val) => { // Remove matrix, marker, and placeholder and replace it with value
-                                input.remove(count);
-                                input.remove(count);
-                                input.remove(count);
-                                input.push(val);
-                            },
-                            Err(err) => {
-                                input.clear();
-                                input.push(SmartValue::Error(err.to_string()))
-                            }
-                        }
-                    }
-                }
-            }
             count += 1;
         }
         count = 0;
-
+        println!("FUNCTIONS AND MATRICES CALCULATED");
+        print_sv_vec(&input);
         //loop for multiplication and division
         loop{
             if input.get(count) == None{ //All indices have been looked through
@@ -1081,7 +1087,9 @@ impl RCas{
                     // This also works for Matrices :)
                     let value = if let Some(SmartValue::Function(_)) = input.get(safe_sub(x)){ // if previous was a function, then put the solution in a placeholder.
                         SmartValue::Placeholder(solved)
-                    } else if let Some(SmartValue::MatrixMarker) = input.get(safe_sub(x)){
+                    } else if let Some(SmartValue::MatrixMarker) = input.get(safe_sub(x)){ // creating matrix
+                        SmartValue::Placeholder(solved)
+                    } else if let Some(SmartValue::MatrixMarker) = input.get(safe_sub(safe_sub(x))){ // in case x[1](num)
                         SmartValue::Placeholder(solved)
                     } else {
                         solved[0].clone()
@@ -1287,6 +1295,9 @@ impl SmartValue{
                     buf.push_str(format!("[{}x{}]", mat.cols(), mat.rows()).as_str());
                 }
             },
+            SmartValue::MatrixMarker => buf.push_str("MatrixMarker"),
+            SmartValue::SemiColon => buf.push(';'),
+            SmartValue::RangeMarker => buf.push(':'),
             _ => buf.push('?')
         }
         buf
