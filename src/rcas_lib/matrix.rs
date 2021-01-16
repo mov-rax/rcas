@@ -6,6 +6,7 @@ use rust_decimal::prelude::ToPrimitive;
 use crate::rcas_functions::FunctionController;
 use core::ops::RangeInclusive;
 use fltk::FrameType::DiamondDownBox;
+use std::ops::{Add, AddAssign, MulAssign, DivAssign};
 
 #[derive(Clone, PartialEq)]
 pub struct SmartMatrix{
@@ -491,6 +492,122 @@ impl SmartMatrix{
     // Gets the number of columns in the matrix
     pub fn cols(&self) -> usize{
         self.col
+    }
+
+    /// Sets the id of the Matrix
+    pub fn set_id(&mut self, id:String){
+        self.id = id;
+    }
+
+    /// Internal function, applies a function f to each value in a matrix.
+    ///
+    /// - Checks the type of each entry before adding the scalar.
+    /// - If any of the matrix values are not a number an error will given instead.
+    fn map_each_elem<T>(&mut self, value:&SmartValue, f:T) -> Result<(), Box<dyn error::Error>>
+    where T: Fn(&mut Decimal, &Decimal)
+    {
+
+        for elem in &self.data{
+            if let SmartValue::Number(_) = elem{
+            } else {
+                return Err(TypeMismatchError{
+                    found_in: self.id.clone(),
+                    found_type: FunctionController::internal_type_of(elem),
+                    required_type: "Number"
+                }.into())
+            }
+        }
+
+        if let SmartValue::Number(value) = value{
+            for elem in &mut self.data{
+                if let SmartValue::Number(num) = elem{
+                    f(num, value);
+                } else {
+                    return Err(TypeMismatchError{
+                        found_in: self.id.clone(),
+                        found_type: FunctionController::internal_type_of(elem),
+                        required_type: "Number"
+                    }.into())
+                }
+            }
+            return Ok(())
+        }
+        Err(TypeMismatchError{
+            found_in: self.id.clone(),
+            found_type: FunctionController::internal_type_of(&value),
+            required_type: "Number"
+        }.into())
+    }
+
+    /// Adds a scalar to each element in the matrix
+    pub fn add_scalar(&mut self, value:&SmartValue) -> Result<(), Box<dyn error::Error>>{
+        self.map_each_elem(value, |d,v| {
+            d.add_assign(v);
+        })
+    }
+
+    /// Multiplies each element in the matrix with a scalar
+    pub fn mul_scalar(&mut self, value:&SmartValue) -> Result<(), Box<dyn error::Error>>{
+        self.map_each_elem(value, |d,v| {
+            d.mul_assign(v);
+        })
+    }
+
+    /// Divides each element in the matrix by a scalar
+    ///
+    /// - NOT RECCOMENDED. USED MUL_SCALAR INSTEAD
+    pub fn div_scalar(&mut self, value:&SmartValue) -> Result<(), Box<dyn error::Error>>{
+        self.map_each_elem(value, |d,v| {
+            d.div_assign(v);
+        })
+    }
+
+    // Creates a zero-filled matrix with a given row and column size
+    pub fn zero_mat(row:usize, col:usize) -> Self{
+        let mut data = Vec::with_capacity(row*col);
+        for _ in 0..row*col{
+            data.push(SmartValue::Number(Decimal::from(0)));
+        }
+        Self {
+            id: "Matrix".to_string(),
+            data,
+            row,
+            col
+        }
+    }
+
+    // Creates a one-filled matrix with a given row and column size
+    pub fn ones_mat(row:usize, col:usize) -> Self{
+        let mut data = Vec::with_capacity(row*col);
+        for _ in 0..row*col{
+            data.push(SmartValue::Number(Decimal::from(1)));
+        }
+        Self {
+            id: "Matrix".to_string(),
+            data,
+            row,
+            col
+        }
+    }
+
+    // Creates a square identity matrix with a given side length
+    pub fn identity_mat(side:usize) -> Self{
+        let mut data = Vec::with_capacity(side*side);
+        for row in 0..side{
+            for col in 0..side{
+                if row == col{
+                    data.push(SmartValue::Number(Decimal::from(1)))
+                } else {
+                    data.push(SmartValue::Number(Decimal::from(0)))
+                }
+            }
+        }
+        Self {
+            id: "Matrix".to_string(),
+            data,
+            row: side,
+            col: side
+        }
     }
 }
 

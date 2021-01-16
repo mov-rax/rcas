@@ -18,7 +18,7 @@ use crate::rcas_functions::{FunctionController, Function};
 use crate::rcas_constants::ConstantController;
 use fltk::table::TableRowSelectMode::SelectMulti;
 
-mod matrix;
+pub mod matrix;
 
 use matrix::SmartMatrix;
 
@@ -242,6 +242,7 @@ impl RCas{
                             if let Some(mat) = environment.get_mut(id.as_str()){
                                 if let SmartValue::Matrix(mat) = &mut mat[0]{
                                     mat.set_from(&index, values.clone());
+                                    mat.set_id(id.clone()); // set the name of the matrix
                                 }
                             }
                         } else {
@@ -774,6 +775,19 @@ impl RCas{
         //print_sv_vec(&input);
         //Wrapper::recurse_print(&input, 0);
         //println!("---");
+
+        let get_numbers = |data:&Vec<SmartValue>, cnt:usize| {
+            let mut num_left = None;
+            let mut num_right = None;
+            if let Some(SmartValue::Number(left)) = data.get(cnt - 1){
+                num_left = Some(left.clone());
+            }
+            if let Some(SmartValue::Number(right)) = data.get(cnt + 1){
+                num_right = Some(right.clone())
+            }
+            (num_left, num_right)
+        };
+
         // does magic with Vec<SmartValue> that have Commas, i.e., are parameters in functions/ values in matrices
 
         loop{
@@ -977,30 +991,78 @@ impl RCas{
                 break;
             }
 
-            if let Some(SmartValue::Operator(operator)) = input.get(count){
-                if *operator == '*' || *operator == '/'{
-                    if let Some(SmartValue::Number(left)) = input.get(count - 1){
-                        if let Some(SmartValue::Number(right)) = input.get(count + 1){
-                            //multiplication and division
-                            if *operator == '*'{
-                                let replacement = *left * *right;
-                                input[count] = SmartValue::Number(replacement);
-                                input.remove(count + 1);
-                                input.remove(count - 1);
-                            } else{
-                                if *right == Decimal::from(0){ // check divide by zero
+
+            let op = if let Some(SmartValue::Operator(operator)) = input.get(count){
+                Some(*operator)
+            } else {
+                None
+            };
+            let left_exists = if let Some(_) = input.get(safe_sub(count)) { true } else { false };
+            let right_exists = if let Some(_) = input.get(count + 1) { true } else { false };
+
+
+
+            if let Some(operator) = op{
+                if operator == '*' || operator == '/'{
+                    if left_exists && right_exists{
+                        let numbers = get_numbers(&input, count);
+                        if let Some(left) = numbers.0{
+                            if let Some(right) = numbers.1{
+                                if operator == '*'{
+                                    input[count] = SmartValue::Number(left * right);
+                                    input.remove(count + 1);
+                                    input.remove(count - 1);
+                                } else { // division
+                                    if right == Decimal::from(0){ // check divide by zero
+                                        input.clear();
+                                        input.push(SmartValue::Error(DivideByZeroError.to_string()));
+                                        return;
+                                    }
+                                    input[count] = SmartValue::Number(left / right);
+                                    input.remove(count + 1);
+                                    input.remove(count - 1);
+                                }
+                            } else if let Some(SmartValue::Matrix(right)) = input.get_mut(count+1){
+                                if operator == '*'{
+                                    let result = right.mul_scalar(&SmartValue::Number(left));
+                                    if let Err(error) = result{
+                                        input.clear();
+                                        input.push(SmartValue::Error(error.to_string()));
+                                        return;
+                                    }
+                                    input.remove(count); // remove *
+                                    input.remove(count-1); // remove number
+                                } else{ // A scalar cannot be divided by a matrix
                                     input.clear();
-                                    input.push(SmartValue::Error(DivideByZeroError.to_string()));
+                                    input.push(SmartValue::Error("ERROR. Cannot divide Number by Matrix".to_string()));
                                     return;
                                 }
-                                let replacement = *left / *right;
-                                input[count] = SmartValue::Number(replacement);
-                                input.remove(count + 1);
-                                input.remove(count - 1);
                             }
-                            count = 0; //resets the counter
-                            //resetting the counter ensures that operations are successfully applied
+                        } else if let Some(SmartValue::Matrix(left)) = input.get_mut(safe_sub(count)){
+                            if let Some(right) = numbers.1{
+                                if operator == '*'{
+                                    let result = left.mul_scalar(&SmartValue::Number(right));
+                                    if let Err(error) = result{
+                                        input.clear();
+                                        input.push(SmartValue::Error(error.to_string()));
+                                        return;
+                                    }
+                                    input.remove(count); // remove *
+                                    input.remove(count); // remove number
+                                } else {
+                                    // mul_scalar is used instead of div_scalar due to speed increase of multiplication
+                                    let result = left.mul_scalar(&SmartValue::Number(Decimal::from(1)/right));
+                                    if let Err(error) = result{
+                                        input.clear();
+                                        input.push(SmartValue::Error(error.to_string()));
+                                        return;
+                                    }
+                                    input.remove(count); // remove (division)
+                                    input.remove(count); // remove number
+                                }
+                            }
                         }
+                        count = 0; // resets the count for successful operations
                     }
                 }
             }
@@ -1012,6 +1074,73 @@ impl RCas{
             if input.get(count) == None{ //all indices have been looked through
                 //No need to loop again, therefore it breaks.
                 break;
+            }
+
+            let op = if let Some(SmartValue::Operator(operator)) = input.get(count){
+                Some(*operator)
+            } else {
+                None
+            };
+            let left_exists = if let Some(_) = input.get(safe_sub(count)) { true } else { false };
+            let right_exists = if let Some(_) = input.get(count + 1) { true } else { false };
+
+            if let Some(operator) = op{
+                if operator == '+' || operator == '-'{
+                    if left_exists && right_exists{
+                        let numbers = get_numbers(&input, count);
+                        if let Some(left) = numbers.0{
+                            if let Some(right) = numbers.1{
+                                // addition and subtraction
+                                if operator == '+'{
+                                    input[count] = SmartValue::Number(left + right);
+                                    input.remove(count + 1); // removes number on right
+                                    input.remove(count - 1); // removes number on left
+                                } else {
+                                    input[count] = SmartValue::Number(left - right);
+                                    input.remove(count + 1); // removes number on right
+                                    input.remove(count - 1); // removes number on left
+                                }
+                            } else if let Some(SmartValue::Matrix(right)) = input.get_mut(count + 1){
+                                // addition and subtraction of a scalar and a matrix
+                                if operator == '+'{
+                                    if let Err(error) = right.add_scalar(&SmartValue::Number(left)){
+                                        input.clear();
+                                        input.push(SmartValue::Error(error.to_string()));
+                                        return;
+                                    }
+                                } else {
+                                    if let Err(error) = right.add_scalar(&SmartValue::Number(-left)){
+                                        input.clear();
+                                        input.push(SmartValue::Error(error.to_string()));
+                                        return;
+                                    }
+                                }
+                                input.remove(count - 1); // remove number
+                                input.remove(count - 1); // remove -
+                            }
+                        } else if let Some(SmartValue::Matrix(left)) = input.get_mut(safe_sub(count)){
+                            if let Some(right) = numbers.1{
+                                // addition and subtraction of a scalar and a matrix
+                                if operator == '+'{
+                                    if let Err(error) =  left.add_scalar(&SmartValue::Number(right)){
+                                        input.clear();
+                                        input.push(SmartValue::Error(error.to_string()));
+                                        return;
+                                    }
+                                } else {
+                                    if let Err(error) =  left.add_scalar(&SmartValue::Number(-right)){
+                                        input.clear();
+                                        input.push(SmartValue::Error(error.to_string()));
+                                        return;
+                                    }
+                                }
+                                input.remove(count); // remove operator
+                                input.remove(count); // remove number
+                            }
+                        }
+                        count = 0; // resets counter for successful operations
+                    }
+                }
             }
 
             if let Some(SmartValue::Operator(operator)) = input.get(count){

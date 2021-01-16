@@ -14,6 +14,8 @@ use crate::rcas_lib::DataType::Number;
 use fxhash::FxHashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::any::TypeId;
+use crate::rcas_lib::matrix::SmartMatrix;
 
 
 pub enum Function{
@@ -119,6 +121,9 @@ impl FunctionController {
             "setmode" => Function::Standard(Box::new(Self::setmode_f)),
             "expand" => Function::Standard(Box::new(Self::expand_f)),
             "typeof" => Function::Standard(Box::new(Self::type_of)),
+            "identity" => Function::Standard(Box::new(Self::identity_f)),
+            "zeroes" => Function::Standard(Box::new(Self::zeroes_f)),
+            "ones" => Function::Standard(Box::new(Self::ones_f)),
             func => { // Custom functions (user-defined)
                 let environment = self.environment.try_borrow();
                 if let Ok(environment) = environment{
@@ -163,6 +168,92 @@ impl FunctionController {
             SmartValue::Matrix(mat) => format!("{}x{} Matrix", mat.cols(), mat.rows()),
             _ => String::from("Unknown"),
         }
+    }
+
+    fn identity_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        let wrong_type_error = |value:&SmartValue| TypeMismatchError{
+            found_in: "identity".to_string(),
+            found_type: Self::internal_type_of(value),
+            required_type: "Natural Number"
+        };
+
+        if input.len() == 1{
+            if let SmartValue::Number(side) = input[0]{
+                let zero = Decimal::from(0);
+                if side.floor() == side && side > zero{
+                    let side = side.to_usize().ok_or_else(|| wrong_type_error(&input[0]))?;
+                    return Ok(vec![SmartValue::Matrix(SmartMatrix::identity_mat(side))])
+                }
+            }
+            return Err(wrong_type_error(&input[0]).into())
+
+        }
+        Err(IncorrectNumberOfArgumentsError{
+            name: "zeroes_f",
+            found: input.len(),
+            requires: 1
+        }.into())
+    }
+
+    fn zeroes_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        let wrong_type_error = |value:&SmartValue| TypeMismatchError{
+            found_in: "zeroes".to_string(),
+            found_type: Self::internal_type_of(value),
+            required_type: "Natural Number"
+        };
+
+        if input.len() == 2{
+            if let SmartValue::Number(row) = input[0]{
+                if let SmartValue::Number(col) = input[1]{
+                    let zero = Decimal::from(0);
+                    if row.floor() == row && col.floor() == col && row > zero && col > zero{
+                        let row = row.to_usize().ok_or_else(|| wrong_type_error(&input[0]))?;
+                        let col = col.to_usize().ok_or_else(|| wrong_type_error(&input[1]))?;
+                        return Ok(vec![SmartValue::Matrix(SmartMatrix::zero_mat(row,col))])
+                    }
+                } else {
+                    return Err(wrong_type_error(&input[1]).into())
+                }
+            }
+            return Err(wrong_type_error(&input[0]).into())
+
+        }
+        Err(IncorrectNumberOfArgumentsError{
+            name: "zeroes",
+            found: input.len(),
+            requires: 2
+        }.into())
+    }
+
+    fn ones_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+
+        let wrong_type_error = |value:&SmartValue| TypeMismatchError{
+            found_in: "ones".to_string(),
+            found_type: Self::internal_type_of(value),
+            required_type: "Natural Number"
+        };
+
+        if input.len() == 2{
+            if let SmartValue::Number(row) = input[0]{
+                if let SmartValue::Number(col) = input[1]{
+                    let zero = Decimal::from(0);
+                    if row.floor() == row && col.floor() == col && row > zero && col > zero{
+                        let row = row.to_usize().ok_or_else(|| wrong_type_error(&input[0]))?;
+                        let col = col.to_usize().ok_or_else(|| wrong_type_error(&input[1]))?;
+                        return Ok(vec![SmartValue::Matrix(SmartMatrix::ones_mat(row,col))])
+                    }
+                } else {
+                    return Err(wrong_type_error(&input[1]).into())
+                }
+            }
+            return Err(wrong_type_error(&input[0]).into())
+
+        }
+        Err(IncorrectNumberOfArgumentsError{
+            name: "ones",
+            found: input.len(),
+            requires: 2
+        }.into())
     }
 
     fn type_of(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>> {
