@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::error;
 
 
-use std::ops::Deref;
+use std::ops::{Deref, MulAssign, DivAssign};
 use crate::rcas_functions;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -997,75 +997,158 @@ impl RCas{
             } else {
                 None
             };
-            let left_exists = if let Some(_) = input.get(safe_sub(count)) { true } else { false };
-            let right_exists = if let Some(_) = input.get(count + 1) { true } else { false };
-
-
 
             if let Some(operator) = op{
-                if operator == '*' || operator == '/'{
-                    if left_exists && right_exists{
-                        let numbers = get_numbers(&input, count);
-                        if let Some(left) = numbers.0{
-                            if let Some(right) = numbers.1{
-                                if operator == '*'{
-                                    input[count] = SmartValue::Number(left * right);
-                                    input.remove(count + 1);
-                                    input.remove(count - 1);
+                let data = input.split_at_mut(count);
+                let mut removal = None; // If Some(x) -> if x is true it will remove + and element to the right, if false, the left
+                let mut error = None; // some error as a string
+
+                match data.0.last_mut(){
+                    Some(SmartValue::Number(left)) => {
+                        match data.1.get_mut(1){
+                            Some(SmartValue::Number(right)) => {
+                                if operator == '*'{ // multiplication
+                                    left.mul_assign(right.clone());
                                 } else { // division
-                                    if right == Decimal::from(0){ // check divide by zero
-                                        input.clear();
-                                        input.push(SmartValue::Error(DivideByZeroError.to_string()));
-                                        return;
+                                    if *right != Decimal::from(0){
+                                        left.div_assign(right.clone());
+                                    } else {
+                                        error = Some(DivideByZeroError.to_string());
                                     }
-                                    input[count] = SmartValue::Number(left / right);
-                                    input.remove(count + 1);
-                                    input.remove(count - 1);
                                 }
-                            } else if let Some(SmartValue::Matrix(right)) = input.get_mut(count+1){
+                                removal = Some((true, count)); // remove right
+                                count = 0;
+                            },
+                            Some(SmartValue::Matrix(right)) => {
                                 if operator == '*'{
-                                    let result = right.mul_scalar(&SmartValue::Number(left));
-                                    if let Err(error) = result{
-                                        input.clear();
-                                        input.push(SmartValue::Error(error.to_string()));
-                                        return;
+                                    if let Err(err) = right.mul_scalar(&SmartValue::Number(left.clone())){
+                                        error = Some(err.to_string());
                                     }
-                                    input.remove(count); // remove *
-                                    input.remove(count-1); // remove number
-                                } else{ // A scalar cannot be divided by a matrix
-                                    input.clear();
-                                    input.push(SmartValue::Error("ERROR. Cannot divide Number by Matrix".to_string()));
-                                    return;
-                                }
-                            }
-                        } else if let Some(SmartValue::Matrix(left)) = input.get_mut(safe_sub(count)){
-                            if let Some(right) = numbers.1{
-                                if operator == '*'{
-                                    let result = left.mul_scalar(&SmartValue::Number(right));
-                                    if let Err(error) = result{
-                                        input.clear();
-                                        input.push(SmartValue::Error(error.to_string()));
-                                        return;
-                                    }
-                                    input.remove(count); // remove *
-                                    input.remove(count); // remove number
+                                    removal = Some((false, count)); // remove left
+                                    count = 0;
                                 } else {
-                                    // mul_scalar is used instead of div_scalar due to speed increase of multiplication
-                                    let result = left.mul_scalar(&SmartValue::Number(Decimal::from(1)/right));
-                                    if let Err(error) = result{
-                                        input.clear();
-                                        input.push(SmartValue::Error(error.to_string()));
-                                        return;
-                                    }
-                                    input.remove(count); // remove (division)
-                                    input.remove(count); // remove number
+                                    error = Some("ERROR. Cannot divide Number by Matrix".to_string());
                                 }
-                            }
+                            },
+                            _ => {}
                         }
-                        count = 0; // resets the count for successful operations
+                    },
+                    Some(SmartValue::Matrix(left)) => {
+                        match data.1.get_mut(1){
+                            Some(SmartValue::Number(right)) => {
+                                if operator == '*'{
+                                    if let Err(err) = left.mul_scalar(&SmartValue::Number(right.clone())){
+                                        error = Some(err.to_string());
+                                    }
+                                } else {
+                                    // A * 1/B is used instead of A/B for increased speed.
+                                    if let Err(err) = left.mul_scalar(&SmartValue::Number(Decimal::from(1)/right.clone())){
+                                        error = Some(err.to_string());
+                                    }
+                                }
+                                removal = Some((true, count)); // remove right
+                                count = 0;
+                            },
+                            Some(SmartValue::Matrix(right)) => {
+                                if operator == '*'{
+                                    if let Err(err) = left.mul(right){
+                                        error = Some(err.to_string());
+                                    }
+                                    removal = Some((true, count)); // remove right
+                                    count = 0;
+                                } else {
+                                    error = Some("ERROR. Cannot divide Matrix by Matrix".to_string());
+                                }
+                            },
+                            _ => {}
+                        }
+                    },
+                    _ => {}
+                }
+
+                drop(data);
+
+                if let Some(error) = error{
+                    input.clear();
+                    input.push(SmartValue::Error(error.clone()));
+                    return;
+                }
+
+                if let Some((remove_right, location)) = removal{
+                    if remove_right {
+                        input.remove(location);
+                        input.remove(location);
+                    } else {
+                        input.remove(location - 1);
+                        input.remove(location - 1);
                     }
                 }
             }
+
+            // if let Some(operator) = op{
+            //     if operator == '*' || operator == '/'{
+            //         if left_exists && right_exists{
+            //             let numbers = get_numbers(&input, count);
+            //             if let Some(left) = numbers.0{
+            //                 if let Some(right) = numbers.1{
+            //                     if operator == '*'{
+            //                         input[count] = SmartValue::Number(left * right);
+            //                         input.remove(count + 1);
+            //                         input.remove(count - 1);
+            //                     } else { // division
+            //                         if right == Decimal::from(0){ // check divide by zero
+            //                             input.clear();
+            //                             input.push(SmartValue::Error(DivideByZeroError.to_string()));
+            //                             return;
+            //                         }
+            //                         input[count] = SmartValue::Number(left / right);
+            //                         input.remove(count + 1);
+            //                         input.remove(count - 1);
+            //                     }
+            //                 } else if let Some(SmartValue::Matrix(right)) = input.get_mut(count+1){
+            //                     if operator == '*'{
+            //                         let result = right.mul_scalar(&SmartValue::Number(left));
+            //                         if let Err(error) = result{
+            //                             input.clear();
+            //                             input.push(SmartValue::Error(error.to_string()));
+            //                             return;
+            //                         }
+            //                         input.remove(count); // remove *
+            //                         input.remove(count-1); // remove number
+            //                     } else{ // A scalar cannot be divided by a matrix
+            //                         input.clear();
+            //                         input.push(SmartValue::Error("ERROR. Cannot divide Number by Matrix".to_string()));
+            //                         return;
+            //                     }
+            //                 }
+            //             } else if let Some(SmartValue::Matrix(left)) = input.get_mut(safe_sub(count)){
+            //                 if let Some(right) = numbers.1{
+            //                     if operator == '*'{
+            //                         let result = left.mul_scalar(&SmartValue::Number(right));
+            //                         if let Err(error) = result{
+            //                             input.clear();
+            //                             input.push(SmartValue::Error(error.to_string()));
+            //                             return;
+            //                         }
+            //                         input.remove(count); // remove *
+            //                         input.remove(count); // remove number
+            //                     } else {
+            //                         // mul_scalar is used instead of div_scalar due to speed increase of multiplication
+            //                         let result = left.mul_scalar(&SmartValue::Number(Decimal::from(1)/right));
+            //                         if let Err(error) = result{
+            //                             input.clear();
+            //                             input.push(SmartValue::Error(error.to_string()));
+            //                             return;
+            //                         }
+            //                         input.remove(count); // remove (division)
+            //                         input.remove(count); // remove number
+            //                     }
+            //                 }
+            //             }
+            //             count = 0; // resets the count for successful operations
+            //         }
+            //     }
+            // }
             count += 1; //increment so that each index can be calculated
         }
         count = 0;

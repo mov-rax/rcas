@@ -2,11 +2,13 @@ use rust_decimal::Decimal;
 use crate::rcas_lib::{SmartValue, TypeMismatchError, IncorrectNumberOfArgumentsError, IndexOutOfBoundsError, GenericError, DimensionMismatch};
 use std::error;
 use std::fmt::{Debug, Formatter, Display};
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::{ToPrimitive, Zero};
 use crate::rcas_functions::FunctionController;
 use core::ops::RangeInclusive;
 use fltk::FrameType::DiamondDownBox;
-use std::ops::{Add, AddAssign, MulAssign, DivAssign};
+use std::ops::{Add, AddAssign, MulAssign, DivAssign, SubAssign};
+
+
 
 #[derive(Clone, PartialEq)]
 pub struct SmartMatrix{
@@ -91,7 +93,6 @@ impl SmartMatrix{
         let index = base + col - 1;
         &self.data[index]
     }
-    // x[1:10,1]
 
     pub fn get_from(&self, index_mat:&SmartMatrix) -> Result<SmartValue, Box<dyn error::Error>>{
         let wrong_type_error = || Box::new(TypeMismatchError{
@@ -562,7 +563,126 @@ impl SmartMatrix{
         })
     }
 
-    // Creates a zero-filled matrix with a given row and column size
+    /// Internal function. Applies each element in a matrix with another element in a matrix
+    ///
+    /// - It will return an `TypeMismatchError` if a value in any of the matrices are not a Number.
+    /// - If `cond` returns `false` a `DimensionMismatchError` will be returned.
+    /// - `cond` has self.usize,self.col,mat.usize,mat.col which decides on whether or not the mapping should occur
+    /// - `f` has &mut Decimal,&Decimal, where &mut Decimal can be mutated with the value of &Decimal
+    fn map_with_mat<T,K>(&mut self, mat:&SmartMatrix, cond:T, f:K) -> Result<(), Box<dyn error::Error>>
+    where T: Fn(usize,usize,usize,usize) -> bool,
+        K: Fn(&mut Decimal, &Decimal)
+    {
+        if cond(self.row,self.col,mat.row,mat.col){
+            for s_data in &mut self.data{
+                if let SmartValue::Number(s_num) = s_data{
+                    for m_data in &mat.data{
+                        if let SmartValue::Number(m_num) = m_data{
+                            f(s_num, m_num)
+                        } else {
+                            return Err(TypeMismatchError{
+                                found_in: mat.id.clone(),
+                                found_type: FunctionController::internal_type_of(m_data),
+                                required_type: "Number"
+                            }.into())
+                        }
+                    }
+                } else {
+                    return Err(TypeMismatchError{
+                        found_in: self.id.clone(),
+                        found_type: FunctionController::internal_type_of(s_data),
+                        required_type: "Number"
+                    }.into())
+                }
+            }
+            return Ok(())
+        }
+
+
+
+        Err(DimensionMismatch{
+            name: mat.id.clone(),
+            found: (mat.row, mat.col),
+            requires: (self.row, self.col),
+            extra_info: None
+        }.into())
+    }
+
+    /// Internal function used to check that each element in a matrix is a number
+    fn check_number(mat:&SmartMatrix) -> Result<(), Box<dyn error::Error>>{
+        for elem in &mat.data{
+            match elem{
+                SmartValue::Number(_) => {},
+                _ => return Err(TypeMismatchError{
+                    found_in: mat.id.clone(),
+                    found_type: FunctionController::internal_type_of(elem),
+                    required_type: "Number"
+                }.into())
+            }
+        }
+        Ok(())
+    }
+
+
+    /// Adds this matrix with a matrix with identical dimensions.
+    pub fn add(&mut self, mat:&SmartMatrix) -> Result<(), Box<dyn error::Error>>{
+        self.map_with_mat(mat,
+                          |s_row,s_col,m_row,m_col | s_row == m_row && s_col == m_col,
+                          |s_d, m_d | s_d.add_assign(m_d))
+    }
+
+    /// Subtracts this matrix with a matrix with identical dimensions.
+    pub fn sub(&mut self, mat: &SmartMatrix) -> Result<(), Box<dyn error::Error>>{
+        self.map_with_mat(mat,
+                          |s_row,s_col,m_row,m_col| s_row == m_row && s_col == m_col,
+                          |s_d,m_d| s_d.sub_assign(m_d))
+    }
+
+    /// Matrix multiplication
+    pub fn mul(&mut self, mat: &SmartMatrix) -> Result<(), Box<dyn error::Error>>{
+
+        let _ = Self::check_number(&self)?;
+        let _ = Self::check_number(mat)?;
+
+        if self.row == mat.col && self.col == mat.row{
+            let mut temp = Vec::new(); // holds calculated values
+            let mut temp_sum = Decimal::from(0); // holds temporary decimal values for summing
+            for row in 1..=self.row{
+                // all elements in a row in matrix A
+                let row_data = Self::new_from_2d_range(&self, row..=row, 1..=self.col);
+                for col in 1..=mat.col{
+                    // all elements in a row in matrix B
+                    let col_data = Self::new_from_2d_range(&mat, 1..=mat.row, col..=col);
+                    for i in 1..=self.row{ // can be self.row or mat.col
+                        if let SmartValue::Number(a_num) = row_data.get(row, i).unwrap(){
+                            if let SmartValue::Number(b_num) = col_data.get(i, col).unwrap(){
+                                temp_sum += a_num * b_num;
+                            } else {
+                                unreachable!() // is checked beforehand
+                            }
+                        } else {
+                            unreachable!() // is checked beforehand
+                        }
+                    }
+                    // End of calculating a value on the final matrix
+                    temp.push(SmartValue::Number(temp_sum));
+                    temp_sum = Decimal::from(0);
+                }
+            }
+            self.data = temp; // calculated matrix
+            self.col = mat.col; // new column size (everything should be laid out nicely)
+            return Ok(())
+        }
+
+        Err(DimensionMismatch{
+            name: mat.id.clone(),
+            found: (mat.row, mat.col),
+            requires: (self.col, self.row),
+            extra_info: None
+        }.into())
+    }
+
+    /// Creates a zero-filled matrix with a given row and column size.
     pub fn zero_mat(row:usize, col:usize) -> Self{
         let mut data = Vec::with_capacity(row*col);
         for _ in 0..row*col{
@@ -576,7 +696,7 @@ impl SmartMatrix{
         }
     }
 
-    // Creates a one-filled matrix with a given row and column size
+    /// Creates a one-filled matrix with a given row and column size.
     pub fn ones_mat(row:usize, col:usize) -> Self{
         let mut data = Vec::with_capacity(row*col);
         for _ in 0..row*col{
@@ -590,7 +710,7 @@ impl SmartMatrix{
         }
     }
 
-    // Creates a square identity matrix with a given side length
+    /// Creates a square identity matrix with a given side length.
     pub fn identity_mat(side:usize) -> Self{
         let mut data = Vec::with_capacity(side*side);
         for row in 0..side{
