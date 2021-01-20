@@ -4,29 +4,148 @@ use std::error;
 use std::fmt::{Debug, Formatter, Display};
 use rust_decimal::prelude::{ToPrimitive, Zero};
 use crate::rcas_functions::FunctionController;
-use core::ops::RangeInclusive;
+use core::ops::{RangeInclusive, Range};
+use core::cell::Ref;
+use core::any::Any;
 use fltk::FrameType::DiamondDownBox;
-use std::ops::{Add, AddAssign, MulAssign, DivAssign, SubAssign};
+use std::ops::{Add, AddAssign, MulAssign, DivAssign, SubAssign, Index, IndexMut, Mul};
+use nalgebra::{Matrix, Dynamic, VecStorage};
+
+// #[derive(Clone, PartialEq)]
+// pub struct SmartMatrix{
+//     id: String, // identifier that should be named the same as it is in the environment (if it is in the environment)
+//     data: Vec<SmartValue>,
+//     row: usize,
+//     col: usize,
+// }
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct DynMatrix{
+    number_mat: Option<Matrix<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>>>,
+    normal_mat: Option<Vec<SmartValue>>,
+}
+
+impl DynMatrix{
+    /// Gets a value at an index.
+    pub unsafe fn get_unchecked(&self, index:usize) -> SmartValue{
+        return if let Some(mat) = self.number_mat.as_ref() {
+            SmartValue::Number(mat[index])
+        } else {
+            let mat = self.normal_mat.as_ref().unwrap();
+            mat[index].clone()
+        }
+    }
+
+    /// Gets a value at an index.
+    pub fn get(&self, index:usize) -> Result<SmartValue, Box<dyn error::Error>>{
+        return if let Some(mat) = self.number_mat.as_ref(){
+            if index < mat.len(){
+                Ok(SmartValue::Number(mat[index]))
+            } else {
+                Err(IndexOutOfBoundsError{ found_index: index as isize, max_index: mat.len() }.into())
+            }
+        } else {
+            let mat = self.normal_mat.as_ref().unwrap();
+            if index < mat.len(){
+                Ok(mat[index].clone())
+            } else {
+                Err(IndexOutOfBoundsError{ found_index: index as isize, max_index: mat.len() }.into())
+            }
+        }
+    }
+
+    /// Sets a value at an index.
+    ///
+    /// - If the value is a Number and the matrix is a Number Matrix, the Number Matrix will remain a Number Matrix.
+    /// - If the value is not a Number and the matrix is a Number Matrix, the Number Matrix will turn into a normal Matrix.
+    /// - A normal Matrix can only be converted to a Number Matrix by the user.
+    pub fn set(&mut self, index:usize, value:SmartValue) -> Result<(), Box<dyn error::Error>>{
+        let bound_check = |index:usize, len:usize| if index > len {Some(IndexOutOfBoundsError{ found_index: index as isize, max_index: len })} else { None };
+
+        let mut convert_to_normal = false;
+        if let Some(mat) = self.number_mat.as_mut(){
+            if let SmartValue::Number(num) = &value{
+                match bound_check(index, mat.len()){
+                    Some(err) => return Err(err.into()),
+                    None => mat[index] = *num,
+                }
+            } else { // convert to normal_mat
+                convert_to_normal = true;
+            }
+        } else {
+            let mat = self.normal_mat.as_mut().unwrap();
+            match bound_check(index, mat.len()){
+                Some(err) => return Err(err.into()),
+                None => mat[index] = value,
+            }
+            return Ok(()) // No need to possibly convert, therefore just return
+        }
+
+        if convert_to_normal{ // converts a number matrix into a normal matrix
+            match bound_check(index, self.number_mat.as_ref().unwrap().len()){
+                Some(err) => return Err(err.into()),
+                _ => {},
+            }
+
+            self.convert_to_normal();
+            self.normal_mat.as_mut().unwrap()[index] = value;
+        }
+
+        Ok(())
+    }
+
+    /// Checks if the matrix is a Number Matrix
+    pub fn is_number_matrix(&self) -> bool{
+       if let Some(_) = self.number_mat.as_ref(){
+            return true
+        }
+        false
+    }
+    /// Safely converts a Number Matrix to a Normal Matrix
+    ///
+    /// - If the Matrix is already a normal Matrix, there will be no change.
+    pub fn convert_to_normal(&mut self){
+        if let Some(_) = self.normal_mat.as_ref(){
+            return; // Don't do anything, its already a normal matrix
+        }
+        let data:Vec<Decimal> = self.number_mat.take().unwrap().data.into();
+        let data = data.iter().map(|x| SmartValue::Number(*x)).collect::<Vec<SmartValue>>();
+        self.normal_mat = Some(data);
+    }
+
+    /// Attempts to convert a Normal Matrix to a Number Matrix
+    ///
+    /// - Requires `row` and `col` (unlike converting to a normal).
+    pub fn try_convert_to_number(&mut self, row:usize, col:usize) -> bool{
+        if let Some(_) = self.number_mat.as_ref(){
+            return true // All is good, don't do anything.
+        }
+        let is_all_number = self.normal_mat.as_ref().unwrap().iter().all(|x| if let SmartValue::Number(_) = x { true } else { false });
+        if is_all_number{
+            let data = self.normal_mat.take().unwrap().iter().map(|x| if let SmartValue::Number(num) = x {*num} else {unreachable!()}).collect::<Vec<Decimal>>();
+            let data = VecStorage::new(Dynamic::new(row), Dynamic::new(col), data);
+            let data = Matrix::from_data(data);
+            self.number_mat = Some(data);
+            return true
+        }
+        false
+    }
 
 
+}
 
-#[derive(Clone, PartialEq)]
-pub struct SmartMatrix{
-    id: String, // identifier that should be named the same as it is in the environment (if it is in the environment)
-    data: Vec<SmartValue>,
+/// A type that supports both a Decimal matrix and a SmartValue matrix.
+#[derive(Clone, PartialEq, Debug)]
+pub struct SmartMatrix {
+    id: String,
+    mat: DynMatrix,
     row: usize,
     col: usize,
 }
 
-impl SmartMatrix{
-    /// Create a SmartMatrix from a slice of SmartValues with Type SmartValue::Number(_)
-    ///
-    /// - If any element in `input` is not a SmartValue::Number(_) an `Err` will be returned.
-    /// - Internal ID defaults to Name 'Matrix'
+impl SmartMatrix {
+
     pub fn new_from(input: &[SmartValue]) -> Result<Self, Box<dyn error::Error>>{
-        let col = input.iter()
-            .take_while(|x| **x != SmartValue::SemiColon)
-            .count();
 
         let data = input.iter()
             .filter_map(|x| if let SmartValue::SemiColon = *x{
@@ -35,66 +154,129 @@ impl SmartMatrix{
                 Some(x.clone())
             }).collect::<Vec<SmartValue>>();
 
+        let col = input.iter()
+            .take_while(|x| **x != SmartValue::SemiColon)
+            .count();
+
         let row = data.len()/col;
 
-        if data.len() != row*col{
-            return Err(Box::new(IncorrectNumberOfArgumentsError{
-                name: "Matrix",
-                found: data.len(),
-                requires: row*col
-            }))
+        let num_data = data.iter()
+            .filter_map(|x| if let SmartValue::Number(num) = *x{
+                return Some(num)
+            } else {
+                None
+            }).collect::<Vec<Decimal>>();
+
+
+        if num_data.len() == data.len(){ // All are numbers, therefore, it will use the number_mat.
+            let num_data = VecStorage::new(Dynamic::new(row),Dynamic::new(col), num_data);
+            let mat = DynMatrix{ number_mat: Some(Matrix::from_data(num_data)), normal_mat: None };
+            return Ok(Self{
+                id: "Matrix".to_string(),
+                mat,
+                row,
+                col
+            })
+        } else{ // Not all are numbers
+            return Ok(Self{
+                id: "Matrix".to_string(),
+                mat: DynMatrix { number_mat: None, normal_mat: Some(data) },
+                row,
+                col
+            })
         }
-        Ok(Self {
-            id: "Matrix".to_string(),
-            data,
-            col,
-            row
-        })
+
+        Err(IncorrectNumberOfArgumentsError{
+            name: "Matrix",
+            found: data.len(),
+            requires: row*col,
+        }.into())
+
     }
 
-
-    pub fn new_from_1d_range(mat:&SmartMatrix, range: RangeInclusive<usize>) -> Self{
-        let data = (&mat.data[range.clone()]).iter().cloned().collect::<Vec<SmartValue>>();
-        Self {
-            id: "Matrix".to_string(),
-            data,
-            col: range.count(),
-            row: 1
-        }
-    }
-
-    pub fn new_from_2d_range(mat:&SmartMatrix, row_range: RangeInclusive<usize>, col_range:RangeInclusive<usize>) -> Self{
-        let mut data = Vec::new();
-        for row in row_range.clone(){
-            for col in col_range.clone(){
-                data.push(unsafe {mat.get_unchecked(row, col).clone()});
+    pub fn new_from_1d_range(mat:&Self, range: Range<usize>) -> Self{
+        return if mat.mat.is_number_matrix(){
+            let data = mat.mat.number_mat.as_ref().unwrap().data.as_vec()[range].iter().cloned().collect::<Vec<Decimal>>();
+            let col = data.len();
+            let data = VecStorage::new(Dynamic::new(1), Dynamic::new(col), data);
+            Self {
+                id: "Matrix".to_string(),
+                mat: DynMatrix { number_mat: Some(Matrix::from_data(data)), normal_mat: None },
+                row: 1,
+                col
+            }
+        } else {
+            let data = mat.mat.normal_mat.as_ref().unwrap().iter().cloned().collect::<Vec<SmartValue>>();
+            let col = data.len();
+            Self {
+                id: "Matrix".to_string(),
+                mat: DynMatrix { number_mat: None, normal_mat: Some(data) },
+                row: 1,
+                col
             }
         }
-        Self {
-            id: "Matrix".to_string(),
-            data,
-            col: col_range.count(),
-            row: row_range.count()
+
+    }
+
+    pub fn cols(&self) -> usize{
+        self.col
+    }
+
+    pub fn rows(&self) -> usize{
+        self.row
+    }
+
+    /// Tries to convert a Normal Matrix into a Number Matrix.
+    ///
+    /// - Returns `true` if it was successfully converted.
+    /// - Returns `false` if it could not convert.
+    pub fn try_convert_to_number(&mut self) -> bool{
+        self.mat.try_convert_to_number(self.row,self.col)
+    }
+
+    pub fn new_from_2d_range(mat:&Self, row_range: Range<usize>, col_range:Range<usize>) -> Self{
+        use nalgebra::storage::Storage;
+
+        let row = row_range.end - row_range.start;
+        let col = col_range.end - row_range.start;
+        return if mat.mat.is_number_matrix(){
+            let slice = mat.mat.number_mat.as_ref().unwrap().slice_range(col_range, row_range);
+            let matrix:Matrix<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>> = Matrix::from(slice);
+            Self {
+                id: "Matrix".to_string(),
+                mat: DynMatrix { number_mat: Some(matrix), normal_mat: None },
+                row,
+                col
+            }
+        } else {
+            let mut data = Vec::new();
+            for row in row_range.clone(){
+                for col in col_range.clone(){
+                    data.push(unsafe {mat.get_unchecked(row,col)})
+                }
+            }
+            Self {
+                id: "Matrix".to_string(),
+                mat: DynMatrix { number_mat: None, normal_mat: Some(data) },
+                row,
+                col
+            }
         }
+
     }
 
-    /// Return a value in a matrix
-    pub fn get(&self, row:usize, col:usize) -> Option<&SmartValue>{
-        if col > 0 && row > 0{
-            let base = self.col * (row - 1);
-            let index = base + col - 1;
-            return Some(&self.data[index])
-        }
-        None
+    /// Used to get a value at a location for a non-number matrix.
+    ///
+    /// - Will panic if beyond the indices of the matrix.
+    /// - `row` & `col` start at 0 instead of 1.
+    unsafe fn get_unchecked(&self, row:usize, col:usize) -> SmartValue{
+        let base = self.col * row;
+        let index = base + col;
+        self.mat.get_unchecked(index)
     }
 
-    unsafe fn get_unchecked(&self, row:usize, col:usize) -> &SmartValue{
-        let base = self.col * (row - 1);
-        let index = base + col - 1;
-        &self.data[index]
-    }
+    pub fn get_from(&self, index_mat:&Self) -> Result<SmartValue, Box<dyn error::Error>>{
 
-    pub fn get_from(&self, index_mat:&SmartMatrix) -> Result<SmartValue, Box<dyn error::Error>>{
         let wrong_type_error = || Box::new(TypeMismatchError{
             found_in: self.id.clone(),
             found_type: "Number".to_string(),
@@ -104,10 +286,10 @@ impl SmartMatrix{
         // return the Err.
         // This is used for 1-dimensional indexing
         let check_len = |a:usize, b:usize| {
-            if a > self.data.len(){
-                return Err(IndexOutOfBoundsError{ found_index: (a as isize), max_index: self.data.len() })
-            } else if b > self.data.len(){
-                return Err(IndexOutOfBoundsError{ found_index: (b as isize), max_index: self.data.len() })
+            if a > self.len(){
+                return Err(IndexOutOfBoundsError{ found_index: (a as isize), max_index: self.len() })
+            } else if b > self.len(){
+                return Err(IndexOutOfBoundsError{ found_index: (b as isize), max_index: self.len() })
             }
             Ok(())
         };
@@ -131,97 +313,117 @@ impl SmartMatrix{
             Ok(())
         };
 
-        if index_mat.data.len() == 1{
-            return if let SmartValue::Range(bound1, step, bound2) = index_mat.data[0] {
-                if step == Decimal::from(1) { // discrete
-                    let bound1 = bound1.to_usize().ok_or_else(|| wrong_type_error())?;
-                    let bound2 = bound2.to_usize().ok_or_else(|| wrong_type_error())?;
-                    let (a, b) = if bound1 < bound2 { (bound1, bound2) } else { (bound2, bound1) };
-                    let _ = check_len(a, b)?;
-                    Ok(SmartValue::Matrix(Self::new_from_1d_range(&self, (a - 1)..=(b - 1))))
-                } else {
-                    Err(wrong_type_error())
-                }
-            } else if let SmartValue::Number(val) = index_mat.data[0] {
-                let index = val.to_usize().ok_or_else(|| wrong_type_error())?;
-                let _ = check_len(index, index)?;
-                if index > 0 {
-                    Ok(self.data[index - 1].clone())
-                } else {
-                    Err(wrong_type_error())
-                }
-            } else { // Value in index is not a Range or a Natural Number
-                Err(Box::new(TypeMismatchError {
-                    found_in: self.id.clone(),
-                    found_type: FunctionController::internal_type_of(&index_mat.data[0]),
+        let num_check = |num:Decimal| num.floor() == num && num > Decimal::from(0);
+
+        if index_mat.len() == 1{
+
+            let first = index_mat.mat.get(0)?;
+
+            return match first {
+                SmartValue::Range(bound1, step, bound2) => {
+                   if num_check(bound1) && num_check(bound2) && step == Decimal::from(1) {
+                        let bound1 = bound1.to_usize().unwrap();
+                        let bound2 = bound2.to_usize().unwrap();
+                        let (a, b) = if bound1 < bound2 { (bound1, bound2) } else { (bound2, bound1) };
+                        let _ = check_len(a, b)?;
+                        Ok(SmartValue::Matrix(Self::new_from_1d_range(&self, (a - 1)..b)))
+                    } else {
+                        Err(wrong_type_error())
+                    }
+                },
+                SmartValue::Number(val) => {
+                    if num_check(val){
+                        let index = val.to_usize().unwrap();
+                        let _ = check_len(index,index)?;
+                        Ok(self.mat.get(index-1)?)
+                    } else {
+                        Err(wrong_type_error())
+                    }
+                },
+                _ => Err( TypeMismatchError {
+                        found_in: index_mat.id.clone(),
+                        found_type: FunctionController::internal_type_of(&index_mat.mat.get(0)?),
+                        required_type: "Natural Number"
+                    }.into())
+
+            };
+        } else if index_mat.len() == 2{
+            let first = index_mat.mat.get(0)?;
+            let second = index_mat.mat.get(1)?;
+
+            return match first {
+                SmartValue::Range(bound_01, step_0, bound_02) => match second {
+                    SmartValue::Range(bound_11, step_1, bound_12) => {
+                        if step_0 == Decimal::from(1) && step_1 == Decimal::from(1) && num_check(bound_01) && num_check(bound_02) && num_check(bound_11) && num_check(bound_12) {
+                            let bound_01 = bound_01.to_usize().unwrap();
+                            let bound_02 = bound_02.to_usize().unwrap();
+                            let bound_11 = bound_11.to_usize().unwrap();
+                            let bound_12 = bound_12.to_usize().unwrap();
+                            let (a1, b1) = if bound_01 < bound_02 { (bound_01, bound_02) } else { (bound_02, bound_01) };
+                            let (a2, b2) = if bound_11 < bound_12 { (bound_11, bound_12) } else { (bound_12, bound_11) };
+                            let _ = check_bounds(a1, b1, a2, b2)?;
+                            Ok(SmartValue::Matrix(Self::new_from_2d_range(&self, (a1 - 1)..b1, (a2 - 1)..b2)))
+                        } else {
+                            Err(wrong_type_error())
+                        }
+                    },
+                    SmartValue::Number(col) => {
+                        if step_0 == Decimal::from(1) && num_check(bound_01) && num_check(bound_02) && num_check(col) {
+                            let bound_01 = bound_01.to_usize().unwrap();
+                            let bound_02 = bound_02.to_usize().unwrap();
+                            let col = col.to_usize().unwrap();
+                            let (a, b) = if bound_01 < bound_02 { (bound_01, bound_02) } else { (bound_02, bound_01) };
+                            let _ = check_bounds(a, col, b, col)?;
+                            Ok(SmartValue::Matrix(Self::new_from_2d_range(&self, (a - 1)..b, (col - 1)..col)))
+                        } else {
+                            Err(wrong_type_error())
+                        }
+                    },
+                    _ => Err(Box::new(TypeMismatchError {
+                        found_in: index_mat.id.clone(),
+                        found_type: FunctionController::internal_type_of(&index_mat.mat.get(1)?),
+                        required_type: "Natural Number"
+                    }))
+                },
+                SmartValue::Number(row) => match second {
+                    SmartValue::Range(bound1, step, bound2) => {
+                        if step == Decimal::from(1) && num_check(row) && num_check(bound1) && num_check(bound2) {
+                            let row = row.to_usize().unwrap();
+                            let bound1 = bound1.to_usize().unwrap();
+                            let bound2 = bound2.to_usize().unwrap();
+                            let (a, b) = if bound1 < bound2 { (bound1, bound2) } else { (bound2, bound1) };
+                            let _ = check_bounds(row, a, row, b)?;
+                            Ok(SmartValue::Matrix(Self::new_from_2d_range(&self, (row - 1)..row, (a - 1)..b)))
+                        } else {
+                            Err(wrong_type_error())
+                        }
+                    },
+                    SmartValue::Number(col) => {
+                        if num_check(row) && num_check(col) {
+                            let row = row.to_usize().unwrap();
+                            let col = col.to_usize().unwrap();
+                            Ok(self.get(row - 1, col - 1).ok_or_else(|| wrong_type_error())?)
+                        } else {
+                            Err(wrong_type_error())
+                        }
+                    },
+                    _ => Err(Box::new(TypeMismatchError {
+                        found_in: index_mat.id.clone(),
+                        found_type: FunctionController::internal_type_of(&index_mat.mat.get(1)?),
+                        required_type: "Natural Number"
+                    })),
+                },
+                _ => Err(Box::new(TypeMismatchError {
+                    found_in: index_mat.id.clone(),
+                    found_type: FunctionController::internal_type_of(&index_mat.mat.get(0)?),
                     required_type: "Natural Number"
                 }))
-            }
-        } else if index_mat.data.len() == 2{
-            // Range,Range & Range,Natural Number
-            if let SmartValue::Range(bound_01, step_0, bound_02) = index_mat.data[0]{
-                return if let SmartValue::Range(bound_11, step_1, bound_12) = index_mat.data[1] {
-                    if step_0 == Decimal::from(1) && step_1 == Decimal::from(1) { // discrete
-                        let bound_01 = bound_01.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let bound_02 = bound_02.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let bound_11 = bound_11.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let bound_12 = bound_12.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let (a1, b1) = if bound_01 < bound_02 { (bound_01, bound_02) } else { (bound_02, bound_01) };
-                        let (a2, b2) = if bound_11 < bound_12 { (bound_11, bound_12) } else { (bound_12, bound_11) };
-                        let _ = check_bounds(a1, b1, a2, b2)?;
-                        Ok(SmartValue::Matrix(Self::new_from_2d_range(&self, a1..=b1, a2..=b2)))
-                    } else {
-                        Err(wrong_type_error())
-                    }
-                } else if let SmartValue::Number(col) = index_mat.data[1] {
-                    if step_0 == Decimal::from(1) {
-                        let bound_01 = bound_01.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let bound_02 = bound_02.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let col = col.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let (a, b) = if bound_01 < bound_02 { (bound_01, bound_02) } else { (bound_02, bound_01) };
-                        let _ = check_bounds(a, b, col, col)?;
-                        Ok(SmartValue::Matrix(Self::new_from_2d_range(&self, a..=b, col..=col)))
-                    } else {
-                        Err(wrong_type_error())
-                    }
-                } else {
-                    Err(Box::new(TypeMismatchError {
-                        found_in: self.id.clone(),
-                        found_type: FunctionController::internal_type_of(&index_mat.data[1]),
-                        required_type: "Natural Number"
-                    }))
-                }
-            }
-            // Natural Number,Range & Natural Number, Natural Number
-            if let SmartValue::Number(row) = index_mat.data[0]{
-                return if let SmartValue::Range(bound1, step, bound2) = index_mat.data[1] {
-                    let row = row.to_usize().ok_or_else(|| wrong_type_error())?;
-                    if step == Decimal::from(1) {
-                        let bound1 = bound1.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let bound2 = bound2.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let (a, b) = if bound1 < bound2 { (bound1, bound2) } else { (bound2, bound1) };
-                        let _ = check_bounds(row, row, a, b)?;
-                        Ok(SmartValue::Matrix(Self::new_from_2d_range(&self, row..=row, a..=b)))
-                    } else {
-                        Err(wrong_type_error())
-                    }
-                } else if let SmartValue::Number(col) = index_mat.data[1] {
-                    let row = row.to_usize().ok_or_else(|| wrong_type_error())?;
-                    let col = col.to_usize().ok_or_else(|| wrong_type_error())?;
-                    let _ = check_bounds(row, row, col, col)?;
-                    Ok(unsafe { self.get_unchecked(row, col).clone() })
-                } else { // col index is not a Natural Number or a Range
-                    Err(Box::new(TypeMismatchError {
-                        found_in: self.id.clone(),
-                        found_type: FunctionController::internal_type_of(&index_mat.data[1]),
-                        required_type: "Natural Number"
-                    }))
-                }
-            }
+            };
+
             // If the row index is not a Natural Number or a Range
             return Err(Box::new(TypeMismatchError{
                 found_in: self.id.clone(),
-                found_type: FunctionController::internal_type_of(&index_mat.data[0]),
+                found_type: FunctionController::internal_type_of(&index_mat.mat.get(0)?),
                 required_type: "Natural Number"
             }))
 
@@ -234,40 +436,53 @@ impl SmartMatrix{
         }))
     }
 
-    /// Set a value in a matrix
-    ///
-    /// If it was properly set it will return a Some(())
-    pub fn set(&mut self, row:usize, col:usize, value:SmartValue) -> Option<()>{
-        if col > 0 && row > 0{
-            let base = self.col * (row - 1);
-            let index = base + col - 1;
-            self.data[index] = value;
-            return Some(())
+    pub fn get(&self, row:usize, col:usize) -> Option<SmartValue>{
+        let base = self.col * row;
+        let index = base + col;
+        self.mat.get(index).ok()
+    }
+
+    pub fn len(&self) -> usize{
+        return if self.mat.is_number_matrix() {
+            let mat = self.mat.number_mat.as_ref().unwrap();
+            mat.len()
+        } else {
+            let mat = self.mat.normal_mat.as_ref().unwrap();
+            mat.len()
         }
-        None
     }
 
-    pub unsafe fn set_unchecked(&mut self, row:usize, col:usize, value:SmartValue){
-        let base = self.col * (row - 1);
-        let index = base + col - 1;
-        self.data[index] = value;
+    /// Set data in matrix
+    ///
+    /// - row and col starts at index 0
+    pub fn set(&mut self, row:usize, col:usize, value: SmartValue) -> Option<()>{
+        let base = self.col * row;
+        let index = base + col;
+        self.mat.set(index, value).ok()
     }
 
-    pub fn set_from(&mut self, index_mat:&SmartMatrix, value:SmartValue) -> Result<(), Box<dyn error::Error>>{
+    pub fn set_id(&mut self, id:String){
+        self.id = id;
+    }
+
+    pub fn set_from(&mut self, index_mat:&Self, value:SmartValue) -> Result<(), Box<dyn error::Error>>{
         let wrong_type_error = || Box::new(TypeMismatchError{
             found_in: self.id.clone(),
             found_type: "Number".to_string(),
             required_type: "Natural Number"
         });
 
-        let check_len = |a:usize, b:usize| {
-            if a > self.data.len(){
-                return Err(IndexOutOfBoundsError{ found_index: (a as isize), max_index: self.data.len() })
-            } else if b > self.data.len(){
-                return Err(IndexOutOfBoundsError{ found_index: (b as isize), max_index: self.data.len() })
+        let check_len = |a:usize, b:usize, len:usize| {
+            if a > len{
+                return Err(IndexOutOfBoundsError{ found_index: (a as isize), max_index: len })
+            } else if b > len{
+                return Err(IndexOutOfBoundsError{ found_index: (b as isize), max_index: len })
             }
             Ok(())
         };
+
+        let num_check = |num:Decimal| num.floor() == num && num > Decimal::from(0);
+
 
         // If any of the bounds inserted are beyond this matrix's limits, it will
         // return the Err(Box<IndexOutOfBoundsError>)
@@ -289,467 +504,344 @@ impl SmartMatrix{
             Ok(())
         };
 
-        if index_mat.len() == 1{
-            return if let SmartValue::Range(bound1, step, bound2) = index_mat.data[0] {
-                if step == Decimal::from(1) { // discrete
-                    let bound1 = bound1.to_usize().ok_or_else(|| wrong_type_error())?;
-                    let bound2 = bound2.to_usize().ok_or_else(|| wrong_type_error())?;
-                    let (a, b) = if bound1 < bound2 { (bound1, bound2) } else { (bound2, bound1) };
-                    let _ = check_len(a,b)?; // make sure its within the boundaries of the matrix
-                    if let SmartValue::Matrix(values) = value{ // we are setting this range to multiple values
-                        if values.row == 1 && values.col == (b - a + 1){ // check dimensions
-                            for i in 0..=(b - a){
-                                self.data[i+a-1] = values.data[i].clone();
-                            }
-                        } else {
-                            return Err(Box::new(DimensionMismatch{
-                                name: self.id.clone(),
-                                found: (values.row, values.col),
-                                requires: (1, b - a),
-                                extra_info: None
-                            }))
-                        }
-                    } else { // Any other type (not a matrix)
-                        for i in (a-1)..=(b-1){
-                            self.data[i] = value.clone();
-                        }
-                    }
-                    Ok(())
-                } else {
-                    Err(wrong_type_error())
-                }
-            } else if let SmartValue::Number(val) = index_mat.data[0] {
-                let index = val.to_usize().ok_or_else(|| wrong_type_error())?;
-                let _ = check_len(index, index)?;
-                if index > 0 {
-                    self.data[index-1] = value.clone();
-                    Ok(())
-                } else {
-                    Err(wrong_type_error())
-                }
-            } else { // Value in index is not a Range or a Natural Number
-                Err(Box::new(TypeMismatchError {
-                    found_in: self.id.clone(),
-                    found_type: FunctionController::internal_type_of(&index_mat.data[0]),
-                    required_type: "Natural Number"
-                }))
-            }
-        } else if index_mat.len() == 2{
-            // Range,Range & Range,Natural Number
-            if let SmartValue::Range(bound_01, step_0, bound_02) = index_mat.data[0]{ // row
-                return if let SmartValue::Range(bound_11, step_1, bound_12) = index_mat.data[1] { // column
-                    if step_0 == Decimal::from(1) && step_1 == Decimal::from(1) { // discrete
-                        let bound_01 = bound_01.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let bound_02 = bound_02.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let bound_11 = bound_11.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let bound_12 = bound_12.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let (a1, b1) = if bound_01 < bound_02 { (bound_01, bound_02) } else { (bound_02, bound_01) };
-                        let (a2, b2) = if bound_11 < bound_12 { (bound_11, bound_12) } else { (bound_12, bound_11) };
-                        let _ = check_bounds(a1, b1, a2, b2)?;
 
-                        if let SmartValue::Matrix(values) = value{
-                            if values.row == (b1 - a1 + 1) && values.col == (b2 - a2 + 1){ // check dimensions
-                                for row in a1..=b1{
-                                    for col in a2..=b2{
-                                        unsafe {self.set_unchecked(row, col, values.get_unchecked(row - a1 + 1, col - a2 + 1).clone())};
-                                    }
-                                }
-                            } else {
-                                return Err(Box::new(DimensionMismatch{
-                                    name: self.id.clone(),
-                                    found: (b1 - a1 + 1, b2 - a2 + 1),
-                                    requires: (self.row, self.col),
-                                    extra_info: None
-                                }))
-                            }
-                        } else { // any other type
-                            for row in a1..=b1{
-                                for col in a2..=b2{
-                                    unsafe {self.set_unchecked(row, col, value.clone())};
-                                }
-                            }
-                        }
-                        Ok(())
-                    } else {
-                        Err(wrong_type_error())
-                    }
-                } else if let SmartValue::Number(col) = index_mat.data[1] { // column
-                    if step_0 == Decimal::from(1) {
-                        let bound_01 = bound_01.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let bound_02 = bound_02.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let col = col.to_usize().ok_or_else(|| wrong_type_error())?;
-                        let (a, b) = if bound_01 < bound_02 { (bound_01, bound_02) } else { (bound_02, bound_01) };
-                        let _ = check_bounds(a, b, col, col)?;
-
-                        if let SmartValue::Matrix(values) = value{ // The value given is a Matrix
-                            if values.row == (b - a + 1) && values.col == 1{ // A nice, vertical matrix
-                                for row in a..=b{
-                                    // the values.data[ ... ] is able to be done due to the data being a column.
-                                    // the data required is contiguous in this case.
-                                    unsafe {self.set_unchecked(row, col, values.data[row - a].clone())};
-                                }
-                            } else {
-                                return Err(Box::new(DimensionMismatch{
-                                    name: self.id.clone(),
-                                    found: (values.row, values.col),
-                                    requires: (b - a + 1, 1),
-                                    extra_info: None
-                                }))
-                            }
-                        } else { // anything else other than a matrix
-                            for row in a..=b{
-                                unsafe {self.set_unchecked(row, col, value.clone())};
-                            }
-                        }
-                        Ok(())
-                    } else { // step is not 1
-                        Err(wrong_type_error())
-                    }
-                } else {
-                    Err(Box::new(TypeMismatchError {
-                        found_in: self.id.clone(),
-                        found_type: FunctionController::internal_type_of(&index_mat.data[1]),
-                        required_type: "Natural Number"
-                    }))
-                }
-            }
-            // Natural Number,Range & Natural Number, Natural Number
-            if let SmartValue::Number(row) = index_mat.data[0]{
-                return if let SmartValue::Range(bound1, step, bound2) = index_mat.data[1] {
-                    let row = row.to_usize().ok_or_else(|| wrong_type_error())?;
-                    if step == Decimal::from(1) {
+        if index_mat.len() == 1 {
+            let first= index_mat.mat.get(0)?;
+            return match first {
+                SmartValue::Range(bound1, step, bound2) => {
+                    if step == Decimal::from(1) && num_check(bound1) && num_check(bound2){ // discrete
                         let bound1 = bound1.to_usize().ok_or_else(|| wrong_type_error())?;
                         let bound2 = bound2.to_usize().ok_or_else(|| wrong_type_error())?;
                         let (a, b) = if bound1 < bound2 { (bound1, bound2) } else { (bound2, bound1) };
-                        let _ = check_bounds(row, row, a, b)?;
-                        if let SmartValue::Matrix(values) = value{
-                            if values.row == 1 && values.col == (b - a + 1){ // a nice horizontal matrix
-                                for col in a..=b{
-                                    // values.data[...] can be used due to the necessary data being contiguous
-                                    unsafe {self.set_unchecked(row, col, values.data[col - a].clone())};
+                        let _ = check_len(a, b, self.row * self.col)?; // make sure its within the boundaries of the matrix
+                        if let SmartValue::Matrix(values) = value { // we are setting this range to multiple values
+                            if values.row == 1 && values.col == (b - a + 1) { // check dimensions
+                                for i in 0..=(b - a) {
+                                    self.mat.set(i + a - 1, unsafe { values.mat.get_unchecked(i) })?;
                                 }
                             } else {
-                                return Err(Box::new(DimensionMismatch{
+                                return Err(Box::new(DimensionMismatch {
                                     name: self.id.clone(),
                                     found: (values.row, values.col),
-                                    requires: (1, b - a + 1),
+                                    requires: (1, b - a),
                                     extra_info: None
                                 }))
                             }
-                        } else { // anything other than a matrix
-                            for col in a..=b{
-                                unsafe {self.set_unchecked(row, col, value.clone())};
+                        } else { // Any other type (not a matrix)
+                            for i in (a - 1)..b {
+                                self.mat.set(i, value.clone())?;
                             }
                         }
                         Ok(())
                     } else {
                         Err(wrong_type_error())
                     }
-                } else if let SmartValue::Number(col) = index_mat.data[1] {
-                    let row = row.to_usize().ok_or_else(|| wrong_type_error())?;
-                    let col = col.to_usize().ok_or_else(|| wrong_type_error())?;
-                    let _ = check_bounds(row, row, col, col)?;
-                    unsafe {self.set_unchecked(row,col,value)};
-                    Ok(())
-                } else { // col index is not a Natural Number or a Range
+                },
+                SmartValue::Number(num) => {
+                    if num_check(num) {
+                        let index = num.to_usize().unwrap();
+                        self.mat.set(index-1, value);
+                        Ok(())
+                    } else {
+                        Err(wrong_type_error())
+                    }
+                },
+                _ => {
                     Err(Box::new(TypeMismatchError {
                         found_in: self.id.clone(),
-                        found_type: FunctionController::internal_type_of(&index_mat.data[1]),
+                        found_type: unsafe {FunctionController::internal_type_of(&index_mat.mat.get_unchecked(0))},
                         required_type: "Natural Number"
                     }))
                 }
             }
-            // If the row index is not a Natural Number or a Range
-            return Err(Box::new(TypeMismatchError{
-                found_in: self.id.clone(),
-                found_type: FunctionController::internal_type_of(&index_mat.data[0]),
-                required_type: "Natural Number"
-            }))
+        } else if index_mat.len() == 2{
+            // Range,Range & Range,Natural Number
+            let first = index_mat.mat.get(0)?;
+            let second = index_mat.mat.get(1)?;
+            return match first {
+                SmartValue::Range(bound_01, step_0, bound_02) => match second {
+                    SmartValue::Range(bound_11, step_1, bound_12) => {
+                        if step_0 == Decimal::from(1) && step_1 == Decimal::from(1) && num_check(bound_01) && num_check(bound_02) && num_check(bound_11) && num_check(bound_12) { // discrete
+                            let bound_01 = bound_01.to_usize().ok_or_else(|| wrong_type_error())?;
+                            let bound_02 = bound_02.to_usize().ok_or_else(|| wrong_type_error())?;
+                            let bound_11 = bound_11.to_usize().ok_or_else(|| wrong_type_error())?;
+                            let bound_12 = bound_12.to_usize().ok_or_else(|| wrong_type_error())?;
+                            let (a1, b1) = if bound_01 < bound_02 { (bound_01, bound_02) } else { (bound_02, bound_01) };
+                            let (a2, b2) = if bound_11 < bound_12 { (bound_11, bound_12) } else { (bound_12, bound_11) };
+                            let _ = check_bounds(a1, b1, a2, b2)?;
+                            if let SmartValue::Matrix(values) = value {
+                                if values.row == (b1 - a1 + 1) && values.col == (b2 - a2 + 1) { // check dimensions
+                                    for row in (a1 - 1)..b1 {
+                                        for col in (a2 - 1)..b2 {
+                                            unsafe { self.set(row, col, values.get_unchecked(row - a1, col - a2)) };
+                                        }
+                                    }
+                                } else {
+                                    return Err(Box::new(DimensionMismatch {
+                                        name: values.id.clone(),
+                                        found: (values.row, values.col),
+                                        requires: (b1 - a1 + 1, b2 - a2 + 1),
+                                        extra_info: None
+                                    }))
+                                }
+                            } else { // any other type
+                                for row in (a1 - 1)..b1 {
+                                    for col in (a2 - 1)..b2 {
+                                        self.set(row, col, value.clone());
+                                    }
+                                }
+                            }
+                            Ok(())
+                        } else {
+                            Err(wrong_type_error())
+                        }
+                    },
+                    SmartValue::Number(col) => {
+                        if step_0 == Decimal::from(1) && num_check(bound_01) && num_check(bound_02) && num_check(col) {
+                            let col = col.to_usize().unwrap();
+                            let bound1 = bound_01.to_usize().unwrap();
+                            let bound2 = bound_02.to_usize().unwrap();
+                            let (a, b) = if bound1 < bound2 { (bound1, bound2) } else { (bound2, bound1) };
+                            let _ = check_bounds(a, col, b, col)?;
+                            if let SmartValue::Matrix(values) = value {
+                                if values.row == b - a + 1 && values.col == 1 { // Dimensions of slice are equivalent to the dimensions of the matrix
+                                    for row in (a - 1)..b {
+                                        // the values.data[ ... ] is able to be done due to the data being a column.
+                                        // the data required is contiguous in this case.
+                                        unsafe { self.set(row, col - 1, values.get_unchecked(row - a, col - 1)) };
+                                    }
+                                } else {
+                                    return Err(DimensionMismatch {
+                                        name: values.id.clone(),
+                                        found: (values.row, values.col),
+                                        requires: (b - a + 1, 1),
+                                        extra_info: None
+                                    }.into())
+                                }
+                            } else { // Anything other than a matrix
+                                for row in (a - 1)..b {
+                                    unsafe { self.set(row, col, value.clone()) };
+                                }
+                            }
+                            Ok(())
+                        } else {
+                            Err(wrong_type_error())
+                        }
+                    }
 
-        }
+                    _ => {
+                        Err(TypeMismatchError {
+                            found_in: self.id.clone(),
+                            found_type: FunctionController::internal_type_of(&second),
+                            required_type: "Natural Number"
+                        }.into())
+                    }
+                },
+                SmartValue::Number(row) => match second {
+                    SmartValue::Range(bound1, step, bound2) => {
+                        if num_check(row) && num_check(bound1) && num_check(bound2) && step == Decimal::from(1) {
+                            let row = row.to_usize().unwrap();
+                            let bound1 = bound1.to_usize().unwrap();
+                            let bound2 = bound2.to_usize().unwrap();
+                            let (a, b) = if bound1 < bound2 { (bound1, bound2) } else { (bound2, bound1) };
+                            let _ = check_bounds(row, a, row, b)?;
+                            if let SmartValue::Matrix(values) = value {
+                                if values.row == 1 && values.col == (b - a + 1) { // a nice horizontal matrix
+                                    for col in (a - 1)..b {
+                                        // values.data[...] can be used due to the necessary data being contiguous
+                                        unsafe { self.set(row - 1, col, values.mat.get_unchecked(col - a)) };
+                                    }
+                                } else {
+                                    return Err(Box::new(DimensionMismatch {
+                                        name: values.id.clone(),
+                                        found: (values.row, values.col),
+                                        requires: (1, b - a + 1),
+                                        extra_info: None
+                                    }))
+                                }
+                            } else { // anything other than a matrix
+                                for col in (a - 1)..b {
+                                    self.set(row, col, value.clone());
+                                }
+                            }
+                            Ok(())
+                        } else {
+                            Err(wrong_type_error())
+                        }
+                    },
+                    SmartValue::Number(col) => {
+                        if num_check(row) && num_check(col) {
+                            let row = row.to_usize().unwrap();
+                            let col = col.to_usize().unwrap();
+                            self.set(row - 1, col - 1, value);
+                            Ok(())
+                        } else {
+                            Err(wrong_type_error())
+                        }
+                    }
+                    _ => {
+                        Err(TypeMismatchError {
+                            found_in: self.id.clone(),
+                            found_type: FunctionController::internal_type_of(&second),
+                            required_type: "Natural Number"
+                        }.into())
+                    }
+                },
+                _ => {
+                    Err(TypeMismatchError {
+                        found_in: self.id.clone(),
+                        found_type: FunctionController::internal_type_of(&first),
+                        required_type: "Natural Number"
+                    }.into())
+                }
+            };
+            }
+
         Err(Box::new(GenericError{})) // I don't know what to replace this with :(
     }
 
-    /// Get a mutable reference to a value in the matrix
-    pub fn get_mut(&mut self, col:usize, row:usize) -> Option<&mut SmartValue>{
-        if col > 0 && row > 0 {
-            let base = self.col * (row - 1);
-            let index = base + col - 1;
-            return Some(&mut self.data[index])
+
+    /// Done for Non-Number matrices, it checks if all elements in the Matrix are a Number.
+    /// - returns `true` if all elements in the matrix are a Number
+    /// - returns `false` if there is an element in the matrix that is not a Number
+    fn check_number(&self) -> Result<(), Box<dyn error::Error>>{
+        return if self.mat.is_number_matrix(){
+            Ok(())
+        } else {
+            Err(TypeMismatchError{
+                found_in: self.id.clone(),
+                found_type: "Matrix".to_string(),
+                required_type: "Number Matrix"
+            }.into())
         }
-        None
+
+    }
+    /// Checks to see if the matrix is a Number Matrix or a Normal Matrix (Matrix)
+    pub fn is_number_matrix(&self) -> bool{
+        self.mat.is_number_matrix()
     }
 
-    /// Gets the number of elements in the matrix
-    pub fn len(&self) -> usize{
-        self.data.len()
+    pub fn add_scalar(&mut self, input:Decimal) -> Result<(), Box<dyn error::Error>>{
+        let _ = self.check_number()?;
+        let mat = self.mat.number_mat.as_mut().unwrap();
+        mat.add_scalar_mut(input);
+        Ok(())
     }
 
-    /// Gets the number of rows in the matrix
-    pub fn rows(&self) -> usize{
-        self.row
+    pub fn mul_scalar(&mut self, input:Decimal) -> Result<(), Box<dyn error::Error>>{
+        let _ = self.check_number()?;
+        let mat= self.mat.number_mat.as_mut().unwrap();
+        mat.mul_assign(input);
+        Ok(())
     }
 
-    // Gets the number of columns in the matrix
-    pub fn cols(&self) -> usize{
-        self.col
+    pub fn div_scalar(&mut self, input:Decimal) -> Result<(), Box<dyn error::Error>>{
+        let _ = self.check_number()?;
+        let mat= self.mat.number_mat.as_mut().unwrap();
+        mat.mul_assign(Decimal::from(1)/input);
+        Ok(())
     }
 
-    /// Sets the id of the Matrix
-    pub fn set_id(&mut self, id:String){
-        self.id = id;
-    }
-
-    /// Internal function, applies a function f to each value in a matrix.
+    /// Safely performs a Matrix operation on a Number Matrix.
     ///
-    /// - Checks the type of each entry before adding the scalar.
-    /// - If any of the matrix values are not a number an error will given instead.
-    fn map_each_elem<T>(&mut self, value:&SmartValue, f:T) -> Result<(), Box<dyn error::Error>>
-    where T: Fn(&mut Decimal, &Decimal)
+    /// - `cond` is the condition for executing the operation. (self.row, self.col, input.row, input.col)
+    /// - `f` is the function that will execute the matrix operation.
+    /// - `err` is the error that will be returned if the condition is not met.
+    fn matrix_operation<C,T>(&mut self, input:&SmartMatrix, cond: C, f: T, err:Box<dyn error::Error>) -> Result<(), Box<dyn error::Error>>
+    where T: Fn(&mut Matrix<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>>, &Matrix<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>>),
+        C: Fn(usize,usize,usize,usize) -> bool
     {
-
-        for elem in &self.data{
-            if let SmartValue::Number(_) = elem{
-            } else {
-                return Err(TypeMismatchError{
-                    found_in: self.id.clone(),
-                    found_type: FunctionController::internal_type_of(elem),
-                    required_type: "Number"
-                }.into())
-            }
-        }
-
-        if let SmartValue::Number(value) = value{
-            for elem in &mut self.data{
-                if let SmartValue::Number(num) = elem{
-                    f(num, value);
-                } else {
-                    return Err(TypeMismatchError{
-                        found_in: self.id.clone(),
-                        found_type: FunctionController::internal_type_of(elem),
-                        required_type: "Number"
-                    }.into())
-                }
-            }
-            return Ok(())
-        }
-        Err(TypeMismatchError{
-            found_in: self.id.clone(),
-            found_type: FunctionController::internal_type_of(&value),
-            required_type: "Number"
-        }.into())
-    }
-
-    /// Adds a scalar to each element in the matrix
-    pub fn add_scalar(&mut self, value:&SmartValue) -> Result<(), Box<dyn error::Error>>{
-        self.map_each_elem(value, |d,v| {
-            d.add_assign(v);
-        })
-    }
-
-    /// Multiplies each element in the matrix with a scalar
-    pub fn mul_scalar(&mut self, value:&SmartValue) -> Result<(), Box<dyn error::Error>>{
-        self.map_each_elem(value, |d,v| {
-            d.mul_assign(v);
-        })
-    }
-
-    /// Divides each element in the matrix by a scalar
-    ///
-    /// - NOT RECCOMENDED. USED MUL_SCALAR INSTEAD
-    pub fn div_scalar(&mut self, value:&SmartValue) -> Result<(), Box<dyn error::Error>>{
-        self.map_each_elem(value, |d,v| {
-            d.div_assign(v);
-        })
-    }
-
-    /// Internal function. Applies each element in a matrix with another element in a matrix
-    ///
-    /// - It will return an `TypeMismatchError` if a value in any of the matrices are not a Number.
-    /// - If `cond` returns `false` a `DimensionMismatchError` will be returned.
-    /// - `cond` has self.usize,self.col,mat.usize,mat.col which decides on whether or not the mapping should occur
-    /// - `f` has &mut Decimal,&Decimal, where &mut Decimal can be mutated with the value of &Decimal
-    fn map_with_mat<T,K>(&mut self, mat:&SmartMatrix, cond:T, f:K) -> Result<(), Box<dyn error::Error>>
-    where T: Fn(usize,usize,usize,usize) -> bool,
-        K: Fn(&mut Decimal, &Decimal)
-    {
-        if cond(self.row,self.col,mat.row,mat.col){
-            for s_data in &mut self.data{
-                if let SmartValue::Number(s_num) = s_data{
-                    for m_data in &mat.data{
-                        if let SmartValue::Number(m_num) = m_data{
-                            f(s_num, m_num)
-                        } else {
-                            return Err(TypeMismatchError{
-                                found_in: mat.id.clone(),
-                                found_type: FunctionController::internal_type_of(m_data),
-                                required_type: "Number"
-                            }.into())
-                        }
-                    }
-                } else {
-                    return Err(TypeMismatchError{
-                        found_in: self.id.clone(),
-                        found_type: FunctionController::internal_type_of(s_data),
-                        required_type: "Number"
-                    }.into())
-                }
-            }
-            return Ok(())
-        }
-
-
-
-        Err(DimensionMismatch{
-            name: mat.id.clone(),
-            found: (mat.row, mat.col),
-            requires: (self.row, self.col),
-            extra_info: None
-        }.into())
-    }
-
-    /// Internal function used to check that each element in a matrix is a number
-    fn check_number(mat:&SmartMatrix) -> Result<(), Box<dyn error::Error>>{
-        for elem in &mat.data{
-            match elem{
-                SmartValue::Number(_) => {},
-                _ => return Err(TypeMismatchError{
-                    found_in: mat.id.clone(),
-                    found_type: FunctionController::internal_type_of(elem),
-                    required_type: "Number"
-                }.into())
-            }
+        let _ = self.check_number()?;
+        let _ = input.check_number()?;
+        let mat= self.mat.number_mat.as_mut().unwrap();
+        if cond(self.row,self.col,input.row,input.col){
+            let input_mat = input.mat.number_mat.as_ref().unwrap();
+            f(mat, input_mat);
+        } else {
+            return Err(err)
         }
         Ok(())
     }
 
-
-    /// Adds this matrix with a matrix with identical dimensions.
-    pub fn add(&mut self, mat:&SmartMatrix) -> Result<(), Box<dyn error::Error>>{
-        self.map_with_mat(mat,
-                          |s_row,s_col,m_row,m_col | s_row == m_row && s_col == m_col,
-                          |s_d, m_d | s_d.add_assign(m_d))
+    pub fn add(&mut self, input:&SmartMatrix) -> Result<(), Box<dyn error::Error>>{
+        self.matrix_operation(input,
+                              |s_row,s_col,i_row,i_col| s_row == i_row && s_col == i_col,
+                              |mat,input_mat| mat.add_assign(input_mat),
+                              DimensionMismatch {
+                                  name: input.id.clone(),
+                                  found: (input.row, input.col),
+                                  requires: (self.row, self.col),
+                                  extra_info: None
+                              }.into())
     }
 
-    /// Subtracts this matrix with a matrix with identical dimensions.
-    pub fn sub(&mut self, mat: &SmartMatrix) -> Result<(), Box<dyn error::Error>>{
-        self.map_with_mat(mat,
-                          |s_row,s_col,m_row,m_col| s_row == m_row && s_col == m_col,
-                          |s_d,m_d| s_d.sub_assign(m_d))
+    pub fn sub(&mut self, input:&SmartMatrix) -> Result<(), Box<dyn error::Error>>{
+        self.matrix_operation(input,
+                              |s_row,s_col,i_row,i_col| s_row == i_row && s_col == i_col,
+                              |mat,input_mat| mat.sub_assign(input_mat),
+                              DimensionMismatch {
+                                  name: input.id.clone(),
+                                  found: (input.row, input.col),
+                                  requires: (self.row, self.col),
+                                  extra_info: None
+                              }.into())
     }
 
-    /// Matrix multiplication
-    pub fn mul(&mut self, mat: &SmartMatrix) -> Result<(), Box<dyn error::Error>>{
-
-        let _ = Self::check_number(&self)?;
-        let _ = Self::check_number(mat)?;
-
-        if self.row == mat.col && self.col == mat.row{
-            let mut temp = Vec::new(); // holds calculated values
-            let mut temp_sum = Decimal::from(0); // holds temporary decimal values for summing
-            for row in 1..=self.row{
-                // all elements in a row in matrix A
-                let row_data = Self::new_from_2d_range(&self, row..=row, 1..=self.col);
-                for col in 1..=mat.col{
-                    // all elements in a row in matrix B
-                    let col_data = Self::new_from_2d_range(&mat, 1..=mat.row, col..=col);
-                    for i in 1..=self.row{ // can be self.row or mat.col
-                        if let SmartValue::Number(a_num) = row_data.get(row, i).unwrap(){
-                            if let SmartValue::Number(b_num) = col_data.get(i, col).unwrap(){
-                                temp_sum += a_num * b_num;
-                            } else {
-                                unreachable!() // is checked beforehand
-                            }
-                        } else {
-                            unreachable!() // is checked beforehand
-                        }
-                    }
-                    // End of calculating a value on the final matrix
-                    temp.push(SmartValue::Number(temp_sum));
-                    temp_sum = Decimal::from(0);
-                }
-            }
-            self.data = temp; // calculated matrix
-            self.col = mat.col; // new column size (everything should be laid out nicely)
-            return Ok(())
-        }
-
-        Err(DimensionMismatch{
-            name: mat.id.clone(),
-            found: (mat.row, mat.col),
-            requires: (self.col, self.row),
-            extra_info: None
-        }.into())
+    pub fn mul(&mut self, input:&SmartMatrix) -> Result<(), Box<dyn error::Error>>{
+        self.matrix_operation(input,
+                              |s_row,s_col,i_row,i_col| s_row == i_col && s_col == i_row,
+                              |mat,input_mat| mat.mul_assign(input_mat),
+                              DimensionMismatch {
+                                  name: input.id.clone(),
+                                  found: (input.row, input.col),
+                                  requires: (self.col, self.row),
+                                  extra_info: None
+                              }.into())
     }
 
-    /// Creates a zero-filled matrix with a given row and column size.
-    pub fn zero_mat(row:usize, col:usize) -> Self{
-        let mut data = Vec::with_capacity(row*col);
-        for _ in 0..row*col{
-            data.push(SmartValue::Number(Decimal::from(0)));
-        }
-        Self {
-            id: "Matrix".to_string(),
-            data,
-            row,
-            col
-        }
-    }
-
-    /// Creates a one-filled matrix with a given row and column size.
-    pub fn ones_mat(row:usize, col:usize) -> Self{
-        let mut data = Vec::with_capacity(row*col);
-        for _ in 0..row*col{
-            data.push(SmartValue::Number(Decimal::from(1)));
-        }
-        Self {
-            id: "Matrix".to_string(),
-            data,
-            row,
-            col
-        }
-    }
-
-    /// Creates a square identity matrix with a given side length.
     pub fn identity_mat(side:usize) -> Self{
-        let mut data = Vec::with_capacity(side*side);
-        for row in 0..side{
-            for col in 0..side{
-                if row == col{
-                    data.push(SmartValue::Number(Decimal::from(1)))
-                } else {
-                    data.push(SmartValue::Number(Decimal::from(0)))
-                }
-            }
-        }
+        let data = Matrix::<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>>::identity(side, side);
         Self {
             id: "Matrix".to_string(),
-            data,
+            mat: DynMatrix { number_mat: Some(data), normal_mat: None },
             row: side,
             col: side
         }
     }
-}
 
-impl Debug for SmartMatrix{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_list()
-            .entries(self.data.iter())
-            .finish()
+    pub fn zero_mat(row:usize,col:usize) -> Self{
+        let data = Matrix::<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>>::zeros(row,col);
+        Self {
+            id: "Matrix".to_string(),
+            mat: DynMatrix { number_mat: Some(data), normal_mat: None },
+            row,
+            col
+        }
+    }
+
+    pub fn ones_mat(row:usize,col:usize) -> Self{
+        let mut data:Matrix<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>> = Matrix::<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>>::zeros(row,col);
+        let data = data.map(|f| Decimal::from(1)).into();
+        Self {
+            id: "Matrix".to_string(),
+            mat: DynMatrix { number_mat: Some(data), normal_mat: None },
+            row,
+            col
+        }
     }
 }
 
-impl Display for SmartMatrix{
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl Display for SmartMatrix {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let mut temp = String::new();
-        for i in 1..=self.row{
-            for j in 1..=self.col{
+        for i in 0..self.row{
+            for j in 0..self.col{
                 temp.push_str(self.get(i,j).unwrap().get_value(false).as_str());
                 temp.push('\t');
             }
             temp.push('\n');
         }
-        temp.pop(); // removes the last newline
+        let _ = temp.pop();
         write!(f, "{}", temp)
     }
 }

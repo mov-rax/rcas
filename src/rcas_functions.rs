@@ -8,7 +8,7 @@ use rust_decimal::prelude::{ToPrimitive, FromPrimitive};
 
 
 use statrs;
-use crate::rcas_lib::{SmartValue, FormattingError, TypeMismatchError, IncorrectNumberOfArgumentsError, Command, NegativeNumberError, OverflowError, RCas, Wrapper, CalculationMode};
+use crate::rcas_lib::{SmartValue, FormattingError, TypeMismatchError, IncorrectNumberOfArgumentsError, Command, NegativeNumberError, OverflowError, RCas, Wrapper, CalculationMode, TypeConversionError};
 use std::ops::Div;
 use crate::rcas_lib::DataType::Number;
 use fxhash::FxHashMap;
@@ -16,6 +16,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::any::TypeId;
 use crate::rcas_lib::matrix::SmartMatrix;
+use std::string::ParseError;
 
 
 pub enum Function{
@@ -122,8 +123,9 @@ impl FunctionController {
             "expand" => Function::Standard(Box::new(Self::expand_f)),
             "typeof" => Function::Standard(Box::new(Self::type_of)),
             "identity" => Function::Standard(Box::new(Self::identity_f)),
-            "zeroes" => Function::Standard(Box::new(Self::zeroes_f)),
+            "zeroes" | "zeros" => Function::Standard(Box::new(Self::zeroes_f)),
             "ones" => Function::Standard(Box::new(Self::ones_f)),
+            "number" => Function::Standard(Box::new(Self::number_f)),
             func => { // Custom functions (user-defined)
                 let environment = self.environment.try_borrow();
                 if let Ok(environment) = environment{
@@ -165,9 +167,50 @@ impl FunctionController {
             SmartValue::Error(_) => String::from("Error"),
             SmartValue::Range(_,_,_) => String::from("Range"),
             SmartValue::Placeholder(_) => String::from("Placeholder"),
-            SmartValue::Matrix(mat) => format!("{}x{} Matrix", mat.cols(), mat.rows()),
+            SmartValue::Matrix(mat) => format!("{}x{} {}", mat.cols(), mat.rows(), if mat.is_number_matrix() {"Number Matrix"} else {"Matrix"}),
             _ => String::from("Unknown"),
         }
+    }
+
+    /// Tries to convert a datatype to a Number
+    fn number_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        use std::str::FromStr;
+        if input.len() == 1{
+
+            let mut status = false; // defaults to false. Set to true to return value.
+            match &mut input[0]{
+                SmartValue::Matrix(mat) => {
+                    if mat.try_convert_to_number() {
+                        status = true;
+                    } else {
+                        return Err(TypeConversionError{
+                            info: Some("Matrix does not exclusively contain Numbers.".into())
+                        }.into())
+                    }
+                },
+                SmartValue::Text(text) => {
+                    let text = Decimal::from_str(&*text);
+                    return match text {
+                        Ok(num) => Ok(vec![SmartValue::Number(num)]),
+                        Err(error) => Err(error.into()),
+                    }
+                },
+                anything_else => return Err(TypeMismatchError{
+                    found_in: "number".to_string(),
+                    found_type: Self::internal_type_of(anything_else),
+                    required_type: "Matrix or Text"
+                }.into())
+            }
+            if status{
+                return Ok(vec![input.remove(0)])
+            }
+        }
+
+        Err(IncorrectNumberOfArgumentsError{
+            name: "number",
+            found: input.len(),
+            requires: 1
+        }.into())
     }
 
     fn identity_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
@@ -201,14 +244,24 @@ impl FunctionController {
             found_type: Self::internal_type_of(value),
             required_type: "Natural Number"
         };
+        let zero = Decimal::from(0);
 
-        if input.len() == 2{
+        if input.len() == 1{
+            if let SmartValue::Number(side) = input[0] {
+                return if side.floor() == side && side > zero {
+                    let side = side.to_usize().unwrap();
+                    Ok(vec![SmartValue::Matrix(SmartMatrix::zero_mat(side, side))])
+                } else {
+                    Err(wrong_type_error(&input[0]).into())
+                }
+
+            }
+        } else if input.len() == 2{
             if let SmartValue::Number(row) = input[0]{
                 if let SmartValue::Number(col) = input[1]{
-                    let zero = Decimal::from(0);
                     if row.floor() == row && col.floor() == col && row > zero && col > zero{
-                        let row = row.to_usize().ok_or_else(|| wrong_type_error(&input[0]))?;
-                        let col = col.to_usize().ok_or_else(|| wrong_type_error(&input[1]))?;
+                        let row = row.to_usize().unwrap();
+                        let col = col.to_usize().unwrap();
                         return Ok(vec![SmartValue::Matrix(SmartMatrix::zero_mat(row,col))])
                     }
                 } else {
@@ -221,7 +274,7 @@ impl FunctionController {
         Err(IncorrectNumberOfArgumentsError{
             name: "zeroes",
             found: input.len(),
-            requires: 2
+            requires: 1
         }.into())
     }
 
@@ -232,8 +285,17 @@ impl FunctionController {
             found_type: Self::internal_type_of(value),
             required_type: "Natural Number"
         };
-
-        if input.len() == 2{
+        let zero = Decimal::from(0);
+        if input.len() == 1{
+            if let SmartValue::Number(side) = input[0]{
+                return if side.floor() == side && side > zero {
+                    let side = side.to_usize().unwrap();
+                    Ok(vec![SmartValue::Matrix(SmartMatrix::ones_mat(side, side))])
+                } else {
+                    Err(wrong_type_error(&input[0]).into())
+                }
+            }
+        } else if input.len() == 2{
             if let SmartValue::Number(row) = input[0]{
                 if let SmartValue::Number(col) = input[1]{
                     let zero = Decimal::from(0);
@@ -252,7 +314,7 @@ impl FunctionController {
         Err(IncorrectNumberOfArgumentsError{
             name: "ones",
             found: input.len(),
-            requires: 2
+            requires: 1
         }.into())
     }
 
