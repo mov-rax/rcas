@@ -19,6 +19,7 @@ use crate::rcas_constants::ConstantController;
 use fltk::table::TableRowSelectMode::SelectMulti;
 
 pub mod matrix;
+pub mod number;
 
 use matrix::SmartMatrix;
 
@@ -97,6 +98,21 @@ pub struct DimensionMismatch{
 #[derive(Debug,Clone,PartialEq)]
 pub struct TypeConversionError{
     pub info: Option<String>
+}
+
+#[derive(Debug,Clone,PartialEq)]
+pub struct AnyError{
+    pub info: Option<String>
+}
+
+impl fmt::Display for AnyError{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        return if let Some(info) = &self.info{
+            write!(f,"ERROR: {}", info)
+        } else {
+            write!(f,"ERROR")
+        }
+    }
 }
 
 impl fmt::Display for TypeConversionError{
@@ -190,6 +206,7 @@ impl error::Error for OverflowError{}
 impl error::Error for IndexOutOfBoundsError{}
 impl error::Error for DimensionMismatch{}
 impl error::Error for TypeConversionError{}
+impl error::Error for AnyError{}
 
 pub struct RCas{
     // Environment that holds user-defined variables and functions. It is an FxHashMap instead of a HashMap for speed purposes.
@@ -459,7 +476,7 @@ impl RCas{
             if let Some(params) = params{
                 parameters = params.clone();
                 temp.push(SmartValue::Parameters(parameters.clone())); // pushes a marker
-            }
+            } // f(x,y) = x + y*2
         }
 
         if parameters.len() != 0 {
@@ -505,7 +522,7 @@ impl RCas{
                 continue;
             }
 
-            if string{ // if we are building a string, then push it to the buffer.
+            if string{
                 buf.push(nth);
                 continue;
             }
@@ -751,7 +768,6 @@ impl RCas{
                 }
                 position += 1;
             }
-
 
         }
 

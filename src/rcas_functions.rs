@@ -61,6 +61,25 @@ impl PartialEq for Function{
         }
     }
 }
+/// Macro to return an error that describes that there was an incorrect number of arguments passed into the function
+macro_rules! incorrect_arguments {
+        ($name:expr,$found:expr,$requires:expr) => {
+            return Err(Box::new(IncorrectNumberOfArgumentsError{name:$name,found:$found,requires:$requires}))
+        }
+}
+
+/// Macro to return a wrong type error
+///
+/// - Takes ```(function_name:String, found_type:String, required_type:&str```
+macro_rules! wrong_type {
+        ($fin:expr,$ftype:expr,$rtype:expr) => {
+           return Err(Box::new(TypeMismatchError{
+                found_in: $fin,
+                found_type: $ftype,
+                required_type: $rtype
+            }))
+        }
+}
 
 pub struct FunctionController{
     environment: Rc<RefCell<FxHashMap<String, Vec<SmartValue>>>>,
@@ -126,6 +145,9 @@ impl FunctionController {
             "zeroes" | "zeros" => Function::Standard(Box::new(Self::zeroes_f)),
             "ones" => Function::Standard(Box::new(Self::ones_f)),
             "number" => Function::Standard(Box::new(Self::number_f)),
+            "lu" => Function::Standard(Box::new(Self::lu_f)),
+            "inv" => Function::Standard(Box::new(Self::inv_f)),
+            "size" => Function::Standard(Box::new(Self::size_f)),
             func => { // Custom functions (user-defined)
                 let environment = self.environment.try_borrow();
                 if let Ok(environment) = environment{
@@ -211,6 +233,42 @@ impl FunctionController {
             found: input.len(),
             requires: 1
         }.into())
+    }
+
+    fn size_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 1{
+            if let SmartValue::Matrix(mat) = &input[0]{
+                return Ok(vec![mat.size()])
+            } else {
+                wrong_type!("size".to_string(), Self::internal_type_of(&input[0]), "Matrix")
+            }
+        }
+        incorrect_arguments!("size",input.len(),1)
+    }
+
+    /// Tries to invert a matrix
+    fn inv_f(&mut self, mut input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 1{
+            if let SmartValue::Matrix(mat) = &mut input[0]{
+                let _ = mat.inverse()?;
+                return Ok(vec![SmartValue::Matrix(mat.clone())])
+            } else {
+                wrong_type!("inv".to_string(), Self::internal_type_of(&input[0]), "Number Matrix")
+            }
+        }
+
+        incorrect_arguments!("inv",input.len(),1)
+    }
+
+    fn lu_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
+        if input.len() == 1{
+            if let SmartValue::Matrix(mat) = &input[0]{
+                let lu = mat.lu_decomposition()?;
+                return Ok(vec![lu])
+            }
+        }
+
+        incorrect_arguments!("lu",input.len(),1)
     }
 
     fn identity_f(&mut self, input:Vec<SmartValue>) -> Result<Vec<SmartValue>, Box<dyn std::error::Error>>{
@@ -550,24 +608,30 @@ impl FunctionController {
         if input.len() != 0{
             let mut sum = Decimal::from(0);
             for i in input{
-                if let SmartValue::Number(number) = i{
-                    sum += number;
-                } else if let SmartValue::Range(bound1,step,bound2) = i{
-                    if bound1 < bound2{ // small to big
-                        let mut count = bound1;
-                        while count <= bound2{
-                            sum += count;
-                            count += step;
+                match i {
+                    SmartValue::Number(number) => {
+                        sum += number;
+                    },
+                    SmartValue::Range(bound1,step,bound2) => {
+                        if bound1 < bound2 { // small to big
+                            let mut count = bound1;
+                            while count <= bound2 {
+                                sum += count;
+                                count += step;
+                            }
+                        } else { // big to small
+                            let mut count = bound1;
+                            while count >= bound2 {
+                                sum += count;
+                                count -= step;
+                            }
                         }
-                    } else { // big to small
-                        let mut count = bound1;
-                        while count >= bound2{
-                            sum += count;
-                            count -= step;
-                        }
-                    }
-                } else {
-                    return Err(Box::new(TypeMismatchError{
+                    },
+                    SmartValue::Matrix(mat) => {
+                        let sum = mat.sum()?;
+                        return Ok(vec![sum])
+                    },
+                    _ => return Err(Box::new(TypeMismatchError{
                         found_in: "sum".to_string(),
                         found_type: Self::internal_type_of(&i),
                         required_type: "Number"
@@ -1123,7 +1187,6 @@ impl FunctionController {
         return Err(Box::new(IncorrectNumberOfArgumentsError{name: "fe", found:input.len(), requires:3}))
     }
 }
-
 
 
 

@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use crate::rcas_lib::{SmartValue, TypeMismatchError, IncorrectNumberOfArgumentsError, IndexOutOfBoundsError, GenericError, DimensionMismatch};
+use crate::rcas_lib::{SmartValue, TypeMismatchError, IncorrectNumberOfArgumentsError, IndexOutOfBoundsError, GenericError, DimensionMismatch, AnyError};
 use std::error;
 use std::fmt::{Debug, Formatter, Display};
 use rust_decimal::prelude::{ToPrimitive, Zero};
@@ -9,7 +9,7 @@ use core::cell::Ref;
 use core::any::Any;
 use fltk::FrameType::DiamondDownBox;
 use std::ops::{Add, AddAssign, MulAssign, DivAssign, SubAssign, Index, IndexMut, Mul};
-use nalgebra::{Matrix, Dynamic, VecStorage};
+use nalgebra::{Matrix, Dynamic, VecStorage, ComplexField};
 
 // #[derive(Clone, PartialEq)]
 // pub struct SmartMatrix{
@@ -18,6 +18,9 @@ use nalgebra::{Matrix, Dynamic, VecStorage};
 //     row: usize,
 //     col: usize,
 // }
+
+type DecimalMatrix = Matrix<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>>;
+type DoubleMatrix = Matrix<f64, Dynamic, Dynamic, VecStorage<f64, Dynamic, Dynamic>>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DynMatrix{
@@ -144,6 +147,39 @@ pub struct SmartMatrix {
 }
 
 impl SmartMatrix {
+
+    pub fn from_number_data(data:Matrix<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>>) -> Self{
+        let row = data.nrows();
+        let col = data.ncols();
+        Self {
+            id: "Matrix".to_string(),
+            mat: DynMatrix { number_mat: Some(data), normal_mat: None },
+            row,
+            col
+        }
+    }
+
+    pub fn new_from_matrices(input: &[Matrix<Decimal, Dynamic, Dynamic, VecStorage<Decimal, Dynamic, Dynamic>>]) -> Self{
+        let col = input.len();
+        let mat = input.iter().map(|m| SmartValue::Matrix(SmartMatrix::from_number_data(m.clone()))).collect::<Vec<SmartValue>>();
+        Self {
+            id: "Matrix".to_string(),
+            mat: DynMatrix { number_mat: None, normal_mat: Some(mat) },
+            row: 1,
+            col
+        }
+    }
+
+    pub fn new_from_decimals(input: &[Decimal]) -> Self{
+        let data = VecStorage::new(Dynamic::new(1), Dynamic::new(input.len()), input.to_vec());
+        let mat = Matrix::from_data(data);
+        Self {
+            id: "Matrix".to_string(),
+            mat: DynMatrix { number_mat: Some(mat), normal_mat: None },
+            row: 1,
+            col: input.len()
+        }
+    }
 
     pub fn new_from(input: &[SmartValue]) -> Result<Self, Box<dyn error::Error>>{
 
@@ -827,6 +863,89 @@ impl SmartMatrix {
             mat: DynMatrix { number_mat: Some(data), normal_mat: None },
             row,
             col
+        }
+    }
+
+    /// LU Decomposition of the matrix.
+    ///
+    /// - Returns a SmartValue::Matrix( [ L ] [ R ] )
+    /// - If matrix is NOT a Number Matrix, an Error will be returned
+    pub fn lu_decomposition(&self) -> Result<SmartValue, Box<dyn error::Error>>{
+        use rust_decimal::prelude::FromPrimitive;
+        if self.mat.is_number_matrix(){
+            let mat = self.mat.number_mat.as_ref().unwrap();
+            let mat_f64 = mat.map(|f| f.to_f64().unwrap()); // temporarily converts decimal to f64
+            let lu = mat_f64.lu();
+            let data = lu.unpack();
+            let l:DecimalMatrix = data.1.map(|f| Decimal::from_f64(f).unwrap()).into();
+            let u:DecimalMatrix = data.2.map(|f| Decimal::from_f64(f).unwrap()).into();
+            return Ok(SmartValue::Matrix(SmartMatrix::new_from_matrices(&[l,u])))
+        }
+        return Err(TypeMismatchError{
+            found_in: self.id.clone(),
+            found_type: "Matrix".to_string(),
+            required_type: "Number Matrix"
+        }.into())
+    }
+
+    /// Inverts the matrix in-place
+    pub fn inverse(&mut self) -> Result<(), Box<dyn error::Error>>{
+        use rust_decimal::prelude::FromPrimitive;
+        if self.mat.is_number_matrix() {
+            let mat = self.mat.number_mat.as_mut().unwrap();
+            let mut mat:DoubleMatrix = mat.map(|f| f.to_f64().unwrap()).into();
+
+            return if mat.try_inverse_mut() {
+                self.row = mat.nrows();
+                self.col = mat.ncols();
+                self.mat.number_mat = Some(mat.map(|f| Decimal::from_f64(f).unwrap()));
+                Ok(())
+            } else {
+                Err(AnyError { info: Some("Matrix is not invertible".to_string()) }.into())
+            }
+
+        }
+
+        Err(TypeMismatchError {
+            found_in: self.id.clone(),
+            found_type: "Matrix".to_string(),
+            required_type: "Number Matrix"
+        }.into())
+    }
+
+    /// Gets the sum of a matrix
+    ///
+    /// - If Matrix is 2-dimensional, it will sum the Columns
+    /// - If Matrix is 1-dimensional, it will sum the entire Matrix
+    pub fn sum(&self) -> Result<SmartValue, Box<dyn error::Error>>{
+        if self.mat.is_number_matrix(){
+            return if self.row == 1 {
+                let mat = self.mat.number_mat.as_ref().unwrap();
+                let sum = mat.sum();
+                Ok(SmartValue::Number(sum))
+            } else { // sum all columns
+                let mat = self.mat.number_mat.as_ref().unwrap();
+                let sum_mat = mat.column_sum();
+                let sum_mat = sum_mat.as_slice();
+                let sum_mat = VecStorage::new(Dynamic::new(1), Dynamic::new(self.col), sum_mat.to_vec());
+                let sum_mat = Matrix::from_data(sum_mat);
+                Ok(SmartValue::Matrix(SmartMatrix::from_number_data(sum_mat)))
+            }
+        }
+
+        Err(TypeMismatchError{
+            found_in: self.id.clone(),
+            found_type: "Matrix".to_string(),
+            required_type: "Number Matrix"
+        }.into())
+    }
+
+    /// Gets the dimensions of the Matrix
+    pub fn size(&self) -> SmartValue{
+        return if self.row == 1 {
+            SmartValue::Number(self.col.into())
+        } else {
+            SmartValue::Matrix(SmartMatrix::new_from_decimals(&[self.row.into(), self.col.into()]))
         }
     }
 }
